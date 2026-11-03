@@ -1,0 +1,51 @@
+{
+	"name": "@misconfig/cli",
+	"version": "1.3.2",
+	"description": "See every file that controls your AI coding agents, what each one tells them to do, which settings put your machine at risk, and whether anything they run is known malware. Runs on your computer.",
+	"keywords": [
+		"claude-code",
+		"codex",
+		"cursor",
+		"copilot",
+		"gemini-cli",
+		"mcp",
+		"ai-agents",
+		"security",
+		"misconfiguration",
+		"malware",
+		"supply-chain"
+	],
+	"homepage": "https://misconfig.ai",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/gkdataio/misconfig.git"
+	},
+	"bugs": {
+		"url": "https://github.com/gkdataio/misconfig/issues"
+	},
+	"license": "Apache-2.0",
+	"author": "GK Data LLC (https://gkdata.io)",
+	"type": "module",
+	"bin": {
+		"misconfig": "bin/misconfig.js"
+	},
+	"scripts": {
+		"test": "node --test"
+	},
+	"files": [
+		"bin",
+		"lib",
+		"engine",
+		"report",
+		"README.md",
+		"CHANGELOG.md",
+		"LICENSE",
+		"NOTICE"
+	],
+	"engines": {
+		"node": ">=18"
+	},
+	"publishConfig": {
+		"access": "public"
+	}
+}
