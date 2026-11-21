@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.4.0 (local build)
+## 1.4.0
 
 - An optional `--attribute` scan matches existing Claude Code and Codex file-edit records to observed settings. `--i-edited` records a personal claim. The timeline shows the editor evidence alongside the approving account.
 - Interactive computer scans announce newer stable npm releases. `--check-update` checks on demand, and `--no-update-check` disables automatic checks.

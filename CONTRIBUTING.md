@@ -10,8 +10,9 @@ Thanks for wanting to help.
 - **A missed risk.** A setting or file that puts an agent's machine at risk that misconfig doesn't report.
 - **A new agent.** An AI coding agent misconfig doesn't know yet, with where it keeps its settings on macOS, Windows and Linux.
 - **Known malware.** A malicious MCP package, editor extension or skill missing from the list, with a link to the report.
+- **Computer review.** A change the scanner missed, an approval that no longer matches, or a warning that disappeared after acceptance. A small sample config and the order of the scans help us check it.
 
-Please don't paste whole config files, tokens or anything from someone else's machine into an issue. For a vulnerability, follow [SECURITY.md](SECURITY.md) instead.
+Use made-up names and values in examples. Local history includes paths and account names, and agent session logs can contain private conversations. For a vulnerability, follow [SECURITY.md](SECURITY.md).
 
 ## Code contributions
 

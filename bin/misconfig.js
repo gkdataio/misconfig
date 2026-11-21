@@ -25,10 +25,9 @@ main(process.argv.slice(2)).then(
 		process.exitCode = code;
 	},
 	(err) => {
-		// Ctrl+C at a question: nothing was sent, and the shell hears it was
-		// interrupted.
+		// Earlier review decisions may already have been saved.
 		if (err?.code === "ABORT_ERR") {
-			console.error("\nmisconfig: Stopped. Nothing was sent.");
+			console.error("\nmisconfig: Stopped at the prompt.");
 			process.exitCode = 130;
 			return;
 		}

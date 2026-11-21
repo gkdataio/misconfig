@@ -58,6 +58,20 @@ test("a newer npm tag gives a notice, the next run reuses it and an upgrade is a
 	assert.equal(updateMessage(failed), "");
 });
 
+test("an explicit registry query leaves the first interactive release announcement available", async (t) => {
+	const dir = await mkdtemp(path.join(tmpdir(), "misconfig-manual-update-"));
+	t.after(() => rm(dir, { recursive: true, force: true }));
+	const options = {
+		cache: path.join(dir, "npm-update.json"),
+		fetchImpl: async () => Response.json({ name: "@misconfig/cli", version: "1.4.0" }),
+	};
+	const manual = await packageUpdate("1.4.0", { ...options, force: true });
+	assert.equal(manual.status, "current");
+	assert.equal(manual.firstReleaseNotice, false);
+	assert.match(updateMessage(await packageUpdate("1.4.0", options)), /Try --demo/);
+	assert.equal(updateMessage(await packageUpdate("1.4.0", options)), "");
+});
+
 test("numbered Codex diffs reverse multiple exact hunks and reject misplaced or incomplete records", () => {
 	const diff = "@@ -1 +1 @@\n-A\n+B\n@@ -4,2 +4,2 @@\n d\n-old\n+new\n\\ No newline at end of file\n";
 	assert.equal(beforePatch("B\nx\ny\nd\nnew", diff), "A\nx\ny\nd\nold\n");

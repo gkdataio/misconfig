@@ -11,59 +11,53 @@
 
 # misconfig
 
-## Try the computer review in 1.4
+misconfig checks the settings that control Claude Code, Codex and other coding agents. It shows which file sets a permission, starts an MCP server or runs a hook, explains the risk, and gives you a fix. Version 1.4 adds a local history of what changed on your computer and who approved it.
 
-To try the review with sample settings, double-click `demo.cmd` on Windows or run the command below with Node.js 18 or later.
+To hear when a release ships, choose **Watch → Custom → Releases** on the [GitHub repository](https://github.com/gkdataio/misconfig), or subscribe to the [release feed](https://github.com/gkdataio/misconfig/releases.atom). These channels also work for people who keep using 1.3.2.
 
-```sh
-node bin/misconfig.js --demo
-```
+## New in 1.4
 
-The demo creates a temporary profile, bumps a sample calendar MCP server from 1.2.3 to 1.2.4, and lets you review the change and an unpinned mail server. A sample Codex tool record identifies the editor of the version bump. Your decision identifies the reviewer. It runs offline and deletes the sample profile when it finishes. Use `--demo --open` to keep the HTML report. In a script or with `--demo --json`, a fictional “Demo reviewer” makes the sample decisions.
-
-To scan your own settings, run the following from this checkout. The folder you normally work in can be passed as an argument. The same personal review history is used across folders.
+The demo requires CLI 1.4 or newer and Node.js 18 or later. Try it on a sample profile. On Windows, use `npx.cmd` if PowerShell blocks `npx`.
 
 ```sh
-node bin/misconfig.js --offline
-node bin/misconfig.js --offline --review
-node bin/misconfig.js --history
+npx @misconfig/cli@latest --demo
 ```
 
-The first scan lists the computer settings you can review. On later scans, **Since your last scan** shows additions, edits and removals. **Awaiting your approval** compares the current settings with your decisions. An item you skip stays pending across scans. Returning to an approved value clears that pending change.
+The demo changes a sample calendar server from 1.2.3 to 1.2.4. A sample Codex record identifies the editor. You can approve that update, then accept a separate warning about an unpinned mail server and see it stay in the report. All decisions use the fictional account **Demo reviewer**. The demo runs offline and deletes the sample profile when you finish. Add `--open` to keep an HTML report. From a 1.4 source checkout or the extracted demo bundle, run `node bin/misconfig.js --demo` or double-click `demo.cmd` on Windows.
 
-In the terminal review, press **Y** to approve one item, **Enter** to skip it, or **Q** to finish. Each decision is saved immediately. You can also pass `--approve ID` with the ID beside one item. A change ID applies to the exact before and after values you saw. The command takes a fresh scan before applying it.
+### Review your computer
 
-Computer settings and accepted risks have separate decisions. Approving a version records the version you expect. Accepting a warning labels that finding **Risk accepted** and dates it. The severity, fix and score still appear in the terminal, the static `--open` report and `--json`. A new warning has its own decision. If a later scan cannot verify the source or no longer observes that warning, **Earlier risk decisions** retains the rule, source and acceptance date. `--yes` applies only to the optional OSV lookup.
+```sh
+npx @misconfig/cli@1.4.0
+npx @misconfig/cli@1.4.0 --review
+npx @misconfig/cli@1.4.0 --history
+```
 
-The review covers computer and administrator config files discovered by the scanner, including MCP server definitions and package pins, hooks, permissions, instructions and agent-related shell settings. It also compares the versions of agent installs and AI editor extensions the scanner identifies. Structured settings are compared by value, individual hooks by their ordered event slot, and instruction text by file. Short descriptions show package versions, public command details or the type of setting that changed. Open the named source file for the full value. If a source is partly read or unreadable, the previous decision is kept and the report names the source needing another check.
+Your first scan lists the settings available for review. **Since your last scan** shows later additions, edits and removals. **Awaiting your approval** also includes changes you skipped. The same local history follows you across project folders.
 
-`--history` reads the saved timeline without scanning or making a network request. It shows when misconfig observed each change, the available evidence about its editor, and the local account that approved it. On a shared login, decisions carry the shared account name. Use `--history --json` for chronological events, or expand **Computer history** in the static HTML report.
+Press **Y** to approve the displayed item, **Enter** to skip it, or **Q** to finish. Each decision is saved immediately. To decide one item by ID, run `--approve ID` with the ID shown in your scan. The command checks the current value again before saving your decision.
 
-History lives in `~/.misconfig/computer-v1/` under your OS account. It holds source paths, labels, short summaries, keyed fingerprints and review decisions. The account that owns these files can edit them. Raw config files, environment values and hook bodies stay out of the history. Use `--no-history` for a one-off scan. `--project-only` skips personal history and keeps its existing CI behavior.
+Approving a setting records the value you expect. Accepting a risk separately adds **Risk accepted**, the date and the approving account to that warning. Its severity, fix and effect on the score stay visible in text, JSON and HTML. **Earlier risk decisions** lists accepted findings that have disappeared or whose file could not be verified. A skipped change stays pending until you approve it or the setting returns to its approved value.
+
+misconfig compares the computer and administrator settings it discovers, including MCP servers, hooks, permissions, instructions, shell settings, installed agent versions and AI editor extensions. The report names any source it could only partly read and preserves its earlier decision. For full setting values, open the named file.
+
+`--history` reads the saved timeline without rescanning. It shows the observation time, any evidence about the editor, and the OS account that approved the change. People sharing a login share that reviewer name. Use `--history --json` for chronological events or expand **Computer history** in an HTML report.
 
 ### Who changed a setting?
 
-Run `node bin/misconfig.js --offline --attribute` to check existing local Claude Code and Codex session records for edits detected by this build. This works after approval, too. To read particular sessions, pass `--session "path/to/session.jsonl"` for each one. These commands work with your current agent settings.
+Run `npx @misconfig/cli@1.4.0 --offline --attribute` to match observed edits against local Claude Code or Codex records. This works after approval, too. To read particular sessions, pass `--session "path/to/session.jsonl"` for each one.
 
 An agent attribution requires a completed file tool, the same file, the exact change to the setting, and a tool timestamp between the two scans. Supported records include Claude Code’s Edit and Write results and Codex’s completed file changes with numbered diffs. Reconstructed patches must also match the saved file fingerprints. A shell command, file owner, or nearby agent session alone leaves the author unknown. A matching record identifies a recorded edit. Other unlogged writes can produce the same setting, and local records are editable.
 
-If you made an edit yourself, take its `e-` ID from `--history` and run, for example, `node bin/misconfig.js --i-edited e-4`. The history labels it **self-reported**. Approval stays a separate decision. Conflicting sources appear as uncertain. Older previews lack the fingerprints for automatic attribution.
+If you made an edit yourself, use its `e-` ID from `--history`. For example, `npx @misconfig/cli@1.4.0 --i-edited e-4` records your OS account as **self-reported**. Conflicting sources appear as uncertain. An edit with no matching evidence stays **Edit author unknown**.
 
 Session records can contain private conversations and tool inputs. Only `--attribute` or `--session` reads them on your computer. Automatic discovery searches the last seven days in Claude’s projects and Codex’s sessions and archived sessions, honoring their config directory overrides. The search reads up to 48 local files, 4 MiB from the end of each, up to 32 MiB total. It reports partial coverage when a limit or read error is encountered. Only matching source labels and timestamps enter the history.
 
 ### npm release notices
 
-Interactive computer scans check the public npm `latest` tag for `@misconfig/cli` and cache a successful check for 24 hours. When a newer stable version is available, the terminal shows both versions and the command to run it. The first check on a newly installed current release announces the version once. This also works for someone coming from 1.3.2 using npx. You can check immediately with `--check-update` or get its result with `--check-update --json`.
+Starting in 1.4, interactive computer scans check the public npm `latest` tag. A successful check is cached for 24 hours. The terminal announces the current release once, or shows both versions and the upgrade command if a newer stable version is available. Run `--check-update` at any time, including with `--json`.
 
 `--no-update-check` or `MISCONFIG_NO_UPDATE_CHECK=1` disables automatic release checks. Offline, demo, history, JSON, CI and project-only scans skip them. The registry request contains only the public package name. Installing an update remains your choice.
-
-Your coding agents take orders from more files than you think. `CLAUDE.md` and `AGENTS.md` are the ones you see. The rest sit in your home folder and app settings: `~/.claude.json`, `~/.codex/config.toml`, editor settings, plugin and skill folders, shell aliases. Any one of them can turn approvals off, hand an agent your whole disk, or start an MCP server that runs whatever its package publishes next.
-
-misconfig finds every one of those files, on your computer and in your project, says what each one tells your agents to do, and flags the settings that put your machine at risk, worst first, with the exact fix.
-
-The published package can be run with `npx @misconfig/cli`. To try the 1.4 changes in this checkout, use the local commands above.
-
-It runs on your computer. Nothing about your setup is uploaded, and it needs no account or API key.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/gkdataio/misconfig/main/assets/terminal.png" alt="misconfig checking a sample project: the files that control its agents, two critical findings with their fixes, and a grade of F" width="820">
@@ -98,41 +92,47 @@ npx @misconfig/cli --lookup     # also ask OSV.dev about what's installed
 | Option | What it does |
 | --- | --- |
 | `--demo` | Try a version change, a risk decision and their history on a disposable sample computer |
+| `--review` | Walk through pending computer changes and risk decisions in a terminal |
+| `--approve ID` | Approve one current change (`c-…`) or accept one current finding (`r-…`) |
 | `--history` | Read the local timeline of observed changes, approvals and risk acceptances. Add `--json` for machine-readable events |
+| `--no-history` | Scan once without reading or writing computer review history |
 | `--attribute` / `--session FILE` | Match observed edits with recent or explicitly chosen local agent records |
 | `--i-edited ID` | Record a self-reported manual edit against its observed event ID |
 | `--check-update` / `--no-update-check` | Check npm now or skip the automatic release check |
 | `--explain` | Shows everything each file sets: permission modes, allowed and blocked actions, MCP servers and what they run, hooks, trusted folders, hidden text, and the agents and extensions installed |
 | `--open` | Saves the full report as one page in your temp folder and opens it in your browser. The page has no scripts and loads nothing from the internet |
 | `--lookup` | Also looks up the MCP packages, extensions and agent versions it found on [OSV.dev](https://osv.dev). It lists the names and versions it would send and asks first |
-| `--offline` | Skips the download of today's malware list and uses the one in the release. Same as `MISCONFIG_OFFLINE=1` |
+| `--offline` | Use bundled malware data and skip the npm version check. An explicit `--lookup` still asks to contact OSV.dev. Same as `MISCONFIG_OFFLINE=1` |
 | `--project-only` | Skips the agent settings on this computer |
 | `--fail-on <level>` | Exits with code 1 if it finds anything at that level or worse: `critical`, `high`, `medium` or `low` |
 | `--json` | Prints the full result as JSON |
 | `--yes` | Runs `--lookup` without asking, for scripts |
+| `--help` / `--version` | Print the supported options or installed version |
 
 ### In CI
 
-Run it before installing dependencies, so a lockfile that pins a known malicious package fails the build before the package runs:
+After checkout, run a project-only scan before installing the project's dependencies. Pin the CLI version in your workflow. This mode checks repository findings and skips personal approvals and history.
 
 ```sh
-npx @misconfig/cli --project-only --fail-on high
+npx --yes @misconfig/cli@1.4.0 --project-only --fail-on high
 ```
 
-Exit codes: `0` when the check ran and nothing reached `--fail-on`, `1` when something did, `2` for errors, or with `--fail-on` when the folder was too large to check completely, and `130` when you press Ctrl+C at a question.
+On GitHub, copy the [example workflow](https://github.com/gkdataio/misconfig/blob/main/examples/github-actions/misconfig.yml) into `.github/workflows/misconfig.yml`. It checks out the repository, sets up Node.js and runs the CLI as a shell step. The `--yes` before the package name lets npx fetch the pinned CLI.
+
+With `--fail-on high`, exit `0` means the scan finished below the threshold, `1` means a high or critical finding, and `2` means an error or an incomplete scan with no finding at the threshold. An interrupted prompt returns `130`.
 
 ## Privacy
 
-- The check runs on your computer, and what it works out about your files stays there.
+- Computer scans save review history under `~/.misconfig/computer-v1/`. It contains paths, labels, short summaries, keyed fingerprints, observation times and review decisions. The OS account that owns the files can edit them. `--no-history` skips this storage. HTML and JSON reports can include paths and reviewer names, so check the contents before sharing them.
 - The malware-list request to misconfig.ai carries the CLI version and operating system family. Interactive computer scans also check the public package version on npm. `--offline` skips both requests, and `DO_NOT_TRACK=1` keeps the malware-list request from being counted.
-- `--lookup` sends package names and versions to OSV.dev, and only after you approve the list.
+- `--lookup` sends package names and versions to OSV.dev after the prompt, or with the CLI's `--yes`. The `npx` launcher may contact npm to fetch the CLI before its own offline mode starts. An installed copy or the extracted demo works without that download.
 - Credential files such as `.env` and `id_rsa`, and programs inside skills, are listed by name only and never opened. Secrets inside agent files are masked as they're read.
 
 The [privacy policy](https://misconfig.ai/privacy) lists everything misconfig.ai receives and how long it's kept.
 
 ## Known malware
 
-Each release bundles every MCP package and editor extension that OSV.dev has listed as malware, the Claude Code, Codex and Claude Desktop versions that are missing security fixes, and the files and workflows that attacks such as s1ngularity and Shai-Hulud leave behind, each with its source. Before every check, the command also downloads today's list, which misconfig.ai rebuilds from OSV.dev every hour, so new listings are caught without waiting for a release.
+Each release bundles known malicious MCP packages and editor extensions, advisories for Claude Code, Codex and Claude Desktop, and traces left by attacks such as s1ngularity and Shai-Hulud. Each entry names its source. An online scan also downloads the malware list that misconfig.ai rebuilds from OSV.dev every hour.
 
 misconfig isn't an antivirus. It doesn't scan programs or watch what your agents do while they run, so keep approvals on for anything you can't undo.
 
@@ -148,6 +148,8 @@ misconfig is plain JavaScript with no dependencies, so what you install is what'
 | [`engine/locations.js`](https://github.com/gkdataio/misconfig/blob/main/engine/locations.js) | Where each agent keeps its files on macOS, Windows and Linux |
 | [`lib/discover.js`](https://github.com/gkdataio/misconfig/blob/main/lib/discover.js) | Which files the command reads, and the limits on what it reads |
 | [`lib/html.js`](https://github.com/gkdataio/misconfig/blob/main/lib/html.js) | The page `--open` saves |
+| [`lib/computer-review.js`](https://github.com/gkdataio/misconfig/blob/main/lib/computer-review.js) | Changes, approvals and accepted risks |
+| [`lib/edit-attribution.js`](https://github.com/gkdataio/misconfig/blob/main/lib/edit-attribution.js) | How optional local edit records are matched |
 
 ## Contributing
 

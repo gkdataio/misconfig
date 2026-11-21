@@ -6,6 +6,7 @@ import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { computerSnapshot } from "../lib/computer-snapshot.js";
 
 const exec = promisify(execFile);
 const bin = fileURLToPath(new URL("../bin/misconfig.js", import.meta.url));
@@ -126,6 +127,123 @@ test("one hook is one decision; object formatting is quiet and equal-length cred
 	}
 });
 
+test("review summaries hide remote values and ignore JSON key order", async (t) => {
+	const { dir, put, scan } = await setup(t);
+	const queryToken = "query-token-9f7d8c6b5a4e3d2c1b0a";
+	const headerToken = "header-token-9f7d8c6b5a4e3d2c1b0a";
+	const first = {
+		mcpServers: {
+			privateRemote: {
+				url: "https://private-token.example.test/mcp?token=" + queryToken,
+				headers: { Authorization: "Bearer " + headerToken, "X-Client": "personal" },
+				env: { SERVICE_TOKEN: headerToken, REGION: "test" },
+			},
+		},
+	};
+	await put(".claude.json", first);
+	const baseline = await scan();
+	const remote = baseline.computerReview.pending.find((row) => row.label === "MCP privateRemote");
+	assert.equal(remote.after, "remote server");
+	const saved = await Promise.all((await readdir(dir)).map((name) => readFile(path.join(dir, name), "utf8")));
+	for (const text of saved) {
+		assert.ok(!text.includes(queryToken));
+		assert.ok(!text.includes(headerToken));
+		assert.ok(!text.includes("private-token.example.test"));
+	}
+	for (const row of baseline.computerReview.pending) await scan("--approve", row.id);
+	await put(".claude.json", {
+		mcpServers: {
+			privateRemote: {
+				env: { REGION: "test", SERVICE_TOKEN: headerToken },
+				headers: { "X-Client": "personal", Authorization: "Bearer " + headerToken },
+				url: "https://private-token.example.test/mcp?token=" + queryToken,
+			},
+		},
+	});
+	const reordered = (await scan()).computerReview;
+	assert.deepEqual(reordered.changes, []);
+	assert.equal(reordered.pending.length, 0);
+});
+
+test("environment and header values stay private while their changes remain reviewable", async (t) => {
+	const { dir, put, scan } = await setup(t);
+	const first = "private-lab-name", next = "private-lab-name-rotated";
+	const header = "private-header-value", nextHeader = "private-header-value-rotated";
+	await put(".claude/settings.json", {
+		env: { MODEL: first, PORT: 45671, nested: { MODEL: first } },
+		http: { headers: { PORT: 45672, "X-Workspace": header } },
+	});
+	await put(".codex/config.toml", '[shell_environment_policy.set]\nMODEL = "' + first + '"\nPORT = 45673\n');
+	const baseline = await scan();
+	for (const row of baseline.computerReview.pending.filter((row) => /(?:env|headers|shell_environment_policy)/i.test(row.label))) {
+		assert.equal(row.after, "private setting");
+		await scan("--approve", row.id);
+	}
+	await put(".claude/settings.json", {
+		env: { MODEL: next, PORT: 45674, nested: { MODEL: next } },
+		http: { headers: { PORT: 45675, "X-Workspace": nextHeader } },
+	});
+	await put(".codex/config.toml", '[shell_environment_policy.set]\nMODEL = "' + next + '"\nPORT = 45676\n');
+	const changed = await scan();
+	const privateChanges = changed.computerReview.changes.filter((row) => /(?:env|headers|shell_environment_policy)/i.test(row.label));
+	assert.ok(privateChanges.length >= 6);
+	for (const row of privateChanges) {
+		assert.equal(row.before, "private setting");
+		assert.equal(row.after, "private setting");
+	}
+	const saved = await Promise.all((await readdir(dir)).map((name) => readFile(path.join(dir, name), "utf8")));
+	for (const text of saved) for (const value of [first, next, header, nextHeader, "45671", "45672", "45673", "45674", "45675", "45676"]) assert.ok(!text.includes(value));
+});
+
+test("preview-state migration redacts summaries without changing approvals, attribution or events", async (t) => {
+	const { dir, put, scan, run } = await setup(t);
+	const privateValue = "private-lab-name-from-preview";
+	const legacyOrigin = "https://private-origin.example.test";
+	await put(".claude/settings.json", { env: { MODEL: privateValue } });
+	await put(".claude.json", { mcpServers: { remote: { url: legacyOrigin + "/mcp" } } });
+	const first = await scan();
+	for (const row of first.computerReview.pending) await scan("--approve", row.id);
+	await put(".claude/settings.json", { env: { MODEL: privateValue + "-next" } });
+	const changed = await scan();
+	const approved = changed.computerReview.pending.find((row) => row.label === "env / MODEL");
+	await run("--i-edited", approved.observationId);
+	const [file] = (await readdir(dir)).filter((name) => /^state-\d+\.json$/.test(name)).sort((a, b) => Number(b.slice(6, -5)) - Number(a.slice(6, -5)));
+	const state = JSON.parse(await readFile(path.join(dir, file), "utf8"));
+	const item = Object.values(state.seen).find((entry) => entry.label === "env / MODEL");
+	item.summary = privateValue;
+	const mcp = Object.values(state.approved).find((entry) => entry.label === "MCP remote");
+	mcp.summary = legacyOrigin;
+	const observed = state.history.events.find((event) => event.id === approved.observationId);
+	observed.before = privateValue;
+	observed.after = privateValue + "-next";
+	state.history.events.push({ action: "approved", at: Date.now(), actor: "preview-reviewer", kind: "changed", label: "MCP remote", file: "~/.claude.json", before: legacyOrigin, after: legacyOrigin, changedFields: [], reviewId: "c-preview" });
+	await writeFile(path.join(dir, file), JSON.stringify(state));
+	const history = JSON.parse((await run("--history", "--json")).stdout);
+	assert.equal(history.events.find((event) => event.id === approved.observationId).editor.basis, "self-reported");
+	assert.equal(history.events.find((event) => event.reviewId === "c-preview").actor, "preview-reviewer");
+	await scan();
+	const saved = await Promise.all((await readdir(dir)).map((name) => readFile(path.join(dir, name), "utf8")));
+	for (const text of saved) {
+		assert.ok(!text.includes(privateValue));
+		assert.ok(!text.includes(legacyOrigin));
+	}
+	const [currentName] = (await readdir(dir)).filter((name) => /^state-\d+\.json$/.test(name)).sort((a, b) => Number(b.slice(6, -5)) - Number(a.slice(6, -5)));
+	const current = JSON.parse(await readFile(path.join(dir, currentName), "utf8"));
+	assert.equal(Object.values(current.seen).find((entry) => entry.label === "env / MODEL").summary, "private setting");
+	assert.equal(Object.values(current.approved).find((entry) => entry.label === "MCP remote").summary, "remote server");
+});
+
+test("extension evidence has a stable revision when discovery order changes", () => {
+	const key = "a".repeat(64);
+	const extension = (items) => {
+		const snapshot = computerSnapshot(key);
+		snapshot.inventory({ installs: [], extensions: [{ dir: "~/.vscode/extensions", items }], traces: [] }, { agents: [], editors: [] });
+		return snapshot.riskSources.get("~/.vscode/extensions");
+	};
+	const a = [{ id: "anthropic.claude-code", version: "1.2.3", source: "marketplace" }, { id: "openai.chatgpt", version: "2.3.4", source: null }];
+	assert.equal(extension(a), extension([...a].reverse()));
+});
+
 test("partly read and invalid files keep prior decisions until a complete observation", async (t) => {
 	const { put, scan, run } = await setup(t);
 	await put(".claude/CLAUDE.md", "Keep headings short.\n");
@@ -149,9 +267,11 @@ test("partly read and invalid files keep prior decisions until a complete observ
 
 test("project scans and one-off scans leave personal history untouched; concurrent decisions both survive", async (t) => {
 	const { dir, put, scan, run } = await setup(t);
-	await put("project/.mcp.json", { mcpServers: { projectSecret: server("1.0.0") } });
+	await put("project/.mcp.json", { mcpServers: { projectSecret: server("") } });
 	await put(".claude.json", { mcpServers: { calendar: server("1.0.0"), mail: server("2.0.0") } });
-	assert.equal((await scan("--project-only")).computerReview, undefined);
+	const projectOnly = await scan("--project-only");
+	assert.equal(projectOnly.computerReview, undefined);
+	assert.equal(projectOnly.findings.find((finding) => finding.file === ".mcp.json")?.review, undefined);
 	assert.equal((await scan("--no-history")).computerReview, undefined);
 	await assert.rejects(stat(dir), { code: "ENOENT" });
 	const start = (await scan()).computerReview;

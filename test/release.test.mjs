@@ -1,0 +1,39 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const read = (file) => readFile(new URL(`../${file}`, import.meta.url), "utf8");
+
+test("the package is Apache-2.0, with its notice, and names its repository", async () => {
+	const pkg = JSON.parse(await read("package.json"));
+	assert.equal(pkg.license, "Apache-2.0");
+	assert.equal(pkg.repository?.url, "git+https://github.com/gkdataio/misconfig.git");
+	assert.equal(pkg.bugs?.url, "https://github.com/gkdataio/misconfig/issues");
+	assert.ok(pkg.files.includes("LICENSE") && pkg.files.includes("NOTICE"));
+	assert.match(await read("LICENSE"), /^\s*Apache License\n\s*Version 2\.0, January 2004\n/);
+	assert.match(await read("NOTICE"), /Copyright 2026 GK Data LLC/);
+	// npm shows the README without the repository's files, so its links and images are absolute.
+	const readme = await read("README.md");
+	assert.deepEqual([...readme.matchAll(/(?:src|href)="(?!https:\/\/|mailto:)([^"]+)"|\]\((?!https:\/\/|mailto:)([^)]+)\)/g)].map((m) => m[1] ?? m[2]), []);
+});
+
+test("the report's marks are only the drawing", async () => {
+	for (const name of ["mark.svg", "mark-black.svg"]) {
+		const svg = await read(`report/${name}`);
+		assert.ok(svg.startsWith("<svg") && !svg.includes("<metadata"), name);
+	}
+});
+
+test("the README, changelog and example workflow match the shipping CLI", async () => {
+	const { version } = JSON.parse(await read("package.json"));
+	const readme = await read("README.md");
+	const workflow = await read("examples/github-actions/misconfig.yml");
+	assert.ok(readme.includes("## New in " + version.split(".").slice(0, 2).join(".")));
+	assert.ok((await read("CHANGELOG.md")).startsWith("# Changelog\n\n## " + version + "\n"));
+	for (const text of [readme, workflow]) {
+		const pins = [...text.matchAll(/@misconfig\/cli@(\d+\.\d+\.\d+)/g)].map((match) => match[1]);
+		assert.ok(pins.length && pins.every((pin) => pin === version));
+	}
+	assert.ok(readme.includes("npx @misconfig/cli@latest --demo"));
+	assert.ok(workflow.includes("--project-only --fail-on high"));
+});
