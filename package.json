@@ -1,6 +1,6 @@
 {
 	"name": "@misconfig/cli",
-	"version": "1.3.2",
+	"version": "1.4.0",
 	"description": "See every file that controls your AI coding agents, what each one tells them to do, which settings put your machine at risk, and whether anything they run is known malware. Runs on your computer.",
 	"keywords": [
 		"claude-code",

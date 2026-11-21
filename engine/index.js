@@ -1719,7 +1719,7 @@ function collectMcpServers(ctx, f) {
 	}
 }
 
-function normalizeServer(name, def, file) {
+export function normalizeServer(name, def, file) {
 	const d = isObj(def) ? def : {};
 	let command = d.command ?? d.cmd;
 	let args = scalars(d.args);

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0 (local build)
+
+- Computer scans show what changed since the previous scan and which settings still await approval. Use `--review` for a guided review or `--approve ID` for one decision.
+- Accepting a risk dates and labels its warning in text, JSON and local HTML. The finding keeps its severity, remediation and score.
+- Review history stays under the current user's home. `--no-history` runs the scanner once without accessing history. Project-only scans retain their 1.3.2 behavior.
+
 ## 1.3.2 (2026-11-03)
 
 - misconfig is open source under the Apache License 2.0. The code, its tests and the issue tracker are at https://github.com/gkdataio/misconfig. The name and logo stay trademarks of GK Data LLC.

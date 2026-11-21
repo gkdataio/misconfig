@@ -11,13 +11,30 @@
 
 # misconfig
 
+## Try the computer review in 1.4
+
+From this checkout, run the following with Node.js 18 or later. The folder you normally work in can be passed as an argument. The same personal review history is used across folders.
+
+```sh
+node bin/misconfig.js --offline
+node bin/misconfig.js --offline --review
+```
+
+The first scan lists the computer settings you can review. On later scans, **Since your last scan** shows additions, edits and removals. **Awaiting your approval** compares the current settings with your decisions. An item you skip stays pending across scans. Returning to an approved value clears that pending change.
+
+In the terminal review, press **Y** to approve one item, **Enter** to skip it, or **Q** to finish. Each decision is saved immediately. You can also pass `--approve ID` with the ID beside one item. A change ID applies to the exact before and after values you saw. The command takes a fresh scan before applying it.
+
+Computer settings and accepted risks have separate decisions. Approving a version records the version you expect. Accepting a warning labels that finding **Risk accepted** and dates it. The severity, fix and score still appear in the terminal, the static `--open` report and `--json`. A new warning has its own decision. If a later scan cannot verify the source or no longer observes that warning, **Earlier risk decisions** retains the rule, source and acceptance date. `--yes` applies only to the optional OSV lookup.
+
+The review covers computer and administrator config files discovered by the scanner, including MCP server definitions and package pins, hooks, permissions, instructions and agent-related shell settings. It also compares the versions of agent installs and AI editor extensions the scanner identifies. Structured settings are compared by value, individual hooks by their ordered event slot, and instruction text by file. Short descriptions show package versions, public command details or the type of setting that changed. Open the named source file for the full value. If a source is partly read or unreadable, the previous decision is kept and the report names the source needing another check.
+
+History lives in `~/.misconfig/computer-v1/` under your OS account. It holds source paths, labels, short summaries, keyed fingerprints and approval records. Raw config files, environment values and hook bodies stay out of the history. Use `--no-history` for a one-off scan. `--project-only` skips personal history and keeps its existing CI behavior.
+
 Your coding agents take orders from more files than you think. `CLAUDE.md` and `AGENTS.md` are the ones you see. The rest sit in your home folder and app settings: `~/.claude.json`, `~/.codex/config.toml`, editor settings, plugin and skill folders, shell aliases. Any one of them can turn approvals off, hand an agent your whole disk, or start an MCP server that runs whatever its package publishes next.
 
 misconfig finds every one of those files, on your computer and in your project, says what each one tells your agents to do, and flags the settings that put your machine at risk, worst first, with the exact fix.
 
-```sh
-npx @misconfig/cli
-```
+The published package can be run with `npx @misconfig/cli`. To try the 1.4 changes in this checkout, use the local commands above.
 
 It runs on your computer. Nothing about your setup is uploaded, and it needs no account or API key.
 
