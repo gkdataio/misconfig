@@ -169,8 +169,9 @@ test("environment and header values stay private while their changes remain revi
 	const { dir, put, scan } = await setup(t);
 	const first = "private-lab-name", next = "private-lab-name-rotated";
 	const header = "private-header-value", nextHeader = "private-header-value-rotated";
+	const offset = -17.625, nextOffset = -32.875;
 	await put(".claude/settings.json", {
-		env: { MODEL: first, PORT: 45671, nested: { MODEL: first } },
+		env: { MODEL: first, PORT: 45671, OFFSET: offset, nested: { MODEL: first } },
 		http: { headers: { PORT: 45672, "X-Workspace": header } },
 	});
 	await put(".codex/config.toml", '[shell_environment_policy.set]\nMODEL = "' + first + '"\nPORT = 45673\n');
@@ -180,7 +181,7 @@ test("environment and header values stay private while their changes remain revi
 		await scan("--approve", row.id);
 	}
 	await put(".claude/settings.json", {
-		env: { MODEL: next, PORT: 45674, nested: { MODEL: next } },
+		env: { MODEL: next, PORT: 45674, OFFSET: nextOffset, nested: { MODEL: next } },
 		http: { headers: { PORT: 45675, "X-Workspace": nextHeader } },
 	});
 	await put(".codex/config.toml", '[shell_environment_policy.set]\nMODEL = "' + next + '"\nPORT = 45676\n');
@@ -192,7 +193,13 @@ test("environment and header values stay private while their changes remain revi
 		assert.equal(row.after, "private setting");
 	}
 	const saved = await Promise.all((await readdir(dir)).map((name) => readFile(path.join(dir, name), "utf8")));
-	for (const text of saved) for (const value of [first, next, header, nextHeader, "45671", "45672", "45673", "45674", "45675", "45676"]) assert.ok(!text.includes(value));
+	for (const text of saved) {
+		for (const value of [first, next, header, nextHeader, String(offset), String(nextOffset)]) {
+			assert.ok(!text.includes(value), "saved a private setting");
+		}
+		// A timestamp or keyed fingerprint can also contain the five digits of a port.
+		assert.doesNotMatch(text, /\b4567[1-6]\b/, "saved a plaintext port");
+	}
 });
 
 test("preview-state migration redacts summaries without changing approvals, attribution or events", async (t) => {
