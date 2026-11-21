@@ -2,6 +2,8 @@
 
 ## 1.4.0 (local build)
 
+- An optional `--attribute` scan matches existing Claude Code and Codex file-edit records to observed settings. `--i-edited` records a personal claim. The timeline shows the editor evidence alongside the approving account.
+- Interactive computer scans announce newer stable npm releases. `--check-update` checks on demand, and `--no-update-check` disables automatic checks.
 - `--demo` runs a guided review on a disposable sample profile and shows its history. On Windows, double-click `demo.cmd` to try it.
 - `--history` shows when each config change was detected and which OS account approved a change or accepted a warning. It works offline and can print JSON. HTML scan reports include the timeline.
 - Computer scans show what changed since the previous scan and which settings still await approval. Use `--review` for a guided review or `--approve ID` for one decision.

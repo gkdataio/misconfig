@@ -318,7 +318,99 @@ test("the offline demo uses a disposable profile and shows the sample risk after
 	const html = await readFile(path.join(home, reportDir, "report.html"), "utf8");
 	assert.match(html, /Computer history \(6\)/);
 	assert.match(html, /Demo reviewer approved the change to MCP calendar/);
-	assert.match(html, /Edit author unknown/);
+	assert.match(html, /Edited by Codex \(local tool record\)/);
 	assert.doesNotMatch(html, /<script\b/i);
 	await assert.rejects(stat(dir), { code: "ENOENT" });
+});
+
+test("a successful Claude file edit can be matched after approval and a separate edit can be claimed without approval", async (t) => {
+	const { home, dir, put, scan, run } = await setup(t);
+	const file = path.join(home, ".claude.json");
+	const values = (calendar, mail) => ({ mcpServers: { calendar: server(calendar), mail: server(mail) } });
+	const old = values("1.2.3", "2.0.0");
+	await put(".claude.json", old);
+	const first = await scan();
+	for (const item of first.computerReview.pending.filter((r) => r.file === "~/.claude.json")) await scan("--approve", item.id);
+	const stamp = new Date().toISOString();
+	const id = "toolu_calendar";
+	const input = { file_path: file, old_string: "calendar@1.2.3", new_string: "calendar@1.2.4", replace_all: false };
+	const call = { type: "assistant", sessionId: "sample", message: { role: "assistant", content: [{ type: "tool_use", name: "Edit", id, input }] } };
+	const reply = { type: "user", timestamp: stamp, sessionId: "sample", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: "Updated" }] },
+		toolUseResult: { filePath: file, originalFile: JSON.stringify(old), oldString: input.old_string, newString: input.new_string, userModified: false } };
+	await put(".claude.json", values("1.2.4", "2.0.1"));
+	const changed = (await scan()).computerReview;
+	const calendar = changed.pending.find((e) => e.label === "MCP calendar");
+	const mail = changed.pending.find((e) => e.label === "MCP mail");
+	await scan("--approve", calendar.id);
+	const log = path.join(home, ".claude/projects/demo/session.jsonl");
+	const lines = (rows) => rows.map((r) => JSON.stringify(r)).join("\n") + "\n";
+	await put(".claude/projects/demo/session.jsonl", lines([call, { ...reply, toolUseResult: { ...reply.toolUseResult, userModified: true } },
+		call, { ...reply, timestamp: "2000-01-01T00:00:00Z" }, call, { ...reply, toolUseResult: { ...reply.toolUseResult, filePath: path.join(home, "other/.claude.json") } },
+		call, { ...reply, message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, is_error: true }] } }]));
+	assert.equal((await scan("--attribute")).computerReview.attribution.matchedEdits, 0);
+	await put(".claude/projects/demo/session.jsonl", lines([call, reply, { type: "user", message: { role: "user", content: "private-chat-canary-472" } }]));
+	const attributed = (await scan("--session", log)).computerReview;
+	assert.equal(attributed.attribution.matchedEdits, 1);
+	const approval = attributed.history.events.find((e) => e.reviewId === calendar.id);
+	assert.equal(approval.actor, userInfo().username);
+	assert.equal(approval.editor.name, "Claude Code");
+	assert.equal(approval.editor.basis, "tool-record");
+	assert.equal(approval.observationId, calendar.observationId);
+	assert.equal(attributed.pending.find((e) => e.id === mail.id).editor, null);
+	const declaration = JSON.parse((await run("--i-edited", mail.observationId, "--json")).stdout);
+	assert.equal(declaration.editor.name, userInfo().username);
+	assert.equal(declaration.editor.basis, "self-reported");
+	assert.ok((await scan()).computerReview.pending.some((e) => e.id === mail.id));
+	assert.equal(JSON.parse((await run("--i-edited", mail.observationId, "--json")).stdout).editor.at, declaration.editor.at);
+	const history = (await run("--history")).stdout;
+	assert.match(history, /Edited by Claude Code \(local tool record\)/);
+	assert.ok(history.includes("Edited by " + userInfo().username + " (self-reported)"));
+	for (const f of await readdir(dir)) assert.ok(!(await readFile(path.join(dir, f), "utf8")).includes("private-chat-canary-472"));
+});
+
+test("Codex completed file-change records require exact content and contradictory editors stay uncertain", async (t) => {
+	const { home, put, scan, run } = await setup(t);
+	const file = path.join(home, ".codex/config.toml");
+	const before = 'model = "alpha"\n', after = 'model = "beta"\n';
+	await put(".codex/config.toml", before);
+	await scan();
+	const timestamp = new Date().toISOString();
+	await put(".codex/config.toml", after);
+	const e = (await scan()).computerReview.changes.find((r) => r.label === "model");
+	const record = (status, diff) => ({ type: "event_msg", timestamp, payload: { type: "item_completed", item: { type: "FileChange", status, changes: { [file]: { type: "update", unified_diff: diff, move_path: null } } } } });
+	const diff = '@@ -1 +1 @@\n-model = "alpha"\n+model = "beta"\n';
+	const save = (...rows) => put(".codex/sessions/2026/11/21/rollout-example.jsonl", rows.map((r) => JSON.stringify(r)).join("\n"));
+	await save(record("failed", diff), record("completed", diff.replace('"alpha"', '"other"')));
+	assert.equal((await scan("--attribute")).computerReview.attribution.matchedEdits, 0);
+	await save(record("completed", diff));
+	const matched = await scan("--attribute");
+	assert.equal(matched.computerReview.pending.find((r) => r.key === e.key).editor.name, "Codex");
+	await run("--i-edited", e.observationId);
+	const state = (await scan("--attribute")).computerReview;
+	const editor = state.pending.find((r) => r.key === e.key).editor;
+	assert.equal(editor.basis, "conflicting");
+	assert.deepEqual(editor.sources.map((s) => s.basis).sort(), ["self-reported", "tool-record"]);
+	assert.match((await run("--history")).stdout, /Edit author uncertain/);
+});
+
+test("a partial patch cannot claim other changes and the last editor is scoped on a multi-edit approval", async (t) => {
+	const { home, put, scan, run } = await setup(t);
+	const name = ".codex/config.toml", abs = path.join(home, name);
+	await put(name, 'model = "alpha"\n# original\n');
+	const start = await scan();
+	await scan("--approve", start.computerReview.pending.find((r) => r.label === "model").id);
+	const timestamp = new Date().toISOString();
+	await put(name, 'model = "beta"\n# separately edited\n');
+	const patch = '@@ -1 +1 @@\n-model = "alpha"\n+model = "beta"\n';
+	await put(".codex/sessions/test.jsonl", JSON.stringify({ type: "event_msg", timestamp, payload: {
+		type: "patch_apply_end", success: true, status: "completed", changes: { [abs]: { type: "update", unified_diff: patch } }
+	} }));
+	const middle = await scan("--attribute");
+	assert.equal(middle.computerReview.attribution.matchedEdits, 0);
+	await put(name, 'model = "gamma"\n# separately edited\n');
+	const latest = (await scan()).computerReview.changes.find((r) => r.label === "model");
+	await run("--i-edited", latest.observationId);
+	const decision = (await scan("--approve", latest.id)).computerReview.history.events.at(-1);
+	assert.deepEqual([decision.before, decision.after, decision.editorScope], ["alpha", "gamma", "latest"]);
+	assert.match((await run("--history")).stdout, /Latest observed edit by/);
 });

@@ -209,7 +209,8 @@ test("--contribute isn't an option", async () => {
 test("--help lists only the options there are, and what each one sends", async () => {
 	const { code, stdout } = await run(["--help"]);
 	assert.equal(code, 0);
-	for (const option of ["--explain", "--lookup", "--open", "--offline", "--yes", "--json", "--project-only", "--fail-on"]) assert.ok(stdout.includes(option), option);
+	for (const option of ["--explain", "--lookup", "--open", "--offline", "--yes", "--json", "--project-only", "--fail-on", "--attribute", "--i-edited", "--session", "--check-update", "--no-update-check"]) assert.ok(stdout.includes(option), option);
+	assert.match(stdout, /Interactive computer scans also check for a newer CLI on npm/);
 	for (const gone of ["--share", "--contribute", "encrypt", "private"]) assert.ok(!stdout.includes(gone), gone);
 	assert.match(stdout, /Nothing else is sent\s+unless you use --lookup\./);
 	assert.match(stdout, /--open\s+Save the full report as a page on this computer and\s+open it in your browser\. Nothing is uploaded\./);
