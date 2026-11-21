@@ -27,16 +27,16 @@ after(async () => {
 	await rm(base, { recursive: true, force: true });
 });
 
-async function folder(name, files, links = {}) {
+async function folder(name, files, directoryLinks = {}) {
 	const dir = path.join(base, name);
 	await mkdir(dir, { recursive: true });
 	for (const [rel, content] of Object.entries(files)) {
 		await mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
 		await writeFile(path.join(dir, rel), content);
 	}
-	for (const [at, target] of Object.entries(links)) {
+	for (const [at, target] of Object.entries(directoryLinks)) {
 		await mkdir(path.dirname(path.join(dir, at)), { recursive: true });
-		await symlink(target, path.join(dir, at));
+		await symlink(target, path.join(dir, at), "dir");
 	}
 	return dir;
 }

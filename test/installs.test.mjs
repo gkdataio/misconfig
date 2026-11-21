@@ -1057,7 +1057,7 @@ test("--project-only checks the project's packages and nothing on this computer"
 });
 
 test("the version Claude Code's launcher points at is the one checked", async (t) => {
-	const launcher = path.join(home, ".local", "bin", "claude");
+	const launcher = path.join(home, ".local", "bin", PLATFORM === "windows" ? "claude.exe" : "claude");
 	await mkdir(path.dirname(launcher), { recursive: true });
 	try {
 		await symlink(path.join(home, ".local", "share", "claude", "versions", "2.1.100"), launcher);
