@@ -1574,6 +1574,36 @@ td code {
 .map-group + .map-group {
 	margin-top: 32px;
 }
+.computer-changes {
+	list-style: none;
+	padding: 0;
+	margin: 1rem 0;
+}
+.computer-changes li {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 0.5rem 1.5rem;
+	padding: 0.9rem 0;
+	border-bottom: 1px solid currentColor;
+	border-color: color-mix(in srgb, currentColor 17%, transparent);
+	overflow-wrap: anywhere;
+}
+.computer-value {
+	margin: 0.3rem 0;
+	font-size: 0.9rem;
+}
+.computer-file, .computer-decision, .computer-note {
+	font-size: 0.9rem;
+}
+.computer-file, .computer-decision code { opacity: 0.75; }
+.computer-decision { text-align: right; }
+.computer-decision code { display: block; font-size: 0.8rem; }
+.computer-note { margin: 0.75rem 0; }
+@media (max-width: 640px) {
+	.computer-changes li { grid-template-columns: 1fr; }
+	.computer-decision { text-align: left; }
+	.computer-decision code { display: inline; margin-left: 0.5rem; }
+}
 .map-scope {
 	color: var(--text-3);
 	font: 500 12.5px/1.3 var(--mono);
