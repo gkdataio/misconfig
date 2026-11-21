@@ -1599,6 +1599,11 @@ td code {
 .computer-decision { text-align: right; }
 .computer-decision code { display: block; font-size: 0.8rem; }
 .computer-note { margin: 0.75rem 0; }
+.computer-history { margin-top: 1.25rem; }
+.computer-history summary { cursor: pointer; font-weight: 600; }
+.computer-history ol { list-style: none; padding: 0; }
+.computer-history li { margin: 0.8rem 0; overflow-wrap: anywhere; }
+.computer-history time { display: block; color: var(--text-3); font: 0.8rem/1.5 var(--mono); }
 @media (max-width: 640px) {
 	.computer-changes li { grid-template-columns: 1fr; }
 	.computer-decision { text-align: left; }

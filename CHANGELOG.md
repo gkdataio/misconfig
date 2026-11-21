@@ -2,6 +2,8 @@
 
 ## 1.4.0 (local build)
 
+- `--demo` runs a guided review on a disposable sample profile and shows its history. On Windows, double-click `demo.cmd` to try it.
+- `--history` shows when each config change was detected and which OS account approved a change or accepted a warning. It works offline and can print JSON. HTML scan reports include the timeline.
 - Computer scans show what changed since the previous scan and which settings still await approval. Use `--review` for a guided review or `--approve ID` for one decision.
 - Accepting a risk dates and labels its warning in text, JSON and local HTML. The finding keeps its severity, remediation and score.
 - Review history stays under the current user's home. `--no-history` runs the scanner once without accessing history. Project-only scans retain their 1.3.2 behavior.

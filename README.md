@@ -13,11 +13,20 @@
 
 ## Try the computer review in 1.4
 
-From this checkout, run the following with Node.js 18 or later. The folder you normally work in can be passed as an argument. The same personal review history is used across folders.
+To try the review with sample settings, double-click `demo.cmd` on Windows or run the command below with Node.js 18 or later.
+
+```sh
+node bin/misconfig.js --demo
+```
+
+The demo creates a temporary profile, bumps a sample calendar MCP server from 1.2.3 to 1.2.4, and lets you review the change and an unpinned mail server. It runs offline. Your decisions appear in the sample history before the demo deletes the profile. Each run starts fresh. Use `--demo --open` to keep the HTML report. In a script or with `--demo --json`, a fictional “Demo reviewer” makes the sample decisions.
+
+To scan your own settings, run the following from this checkout. The folder you normally work in can be passed as an argument. The same personal review history is used across folders.
 
 ```sh
 node bin/misconfig.js --offline
 node bin/misconfig.js --offline --review
+node bin/misconfig.js --history
 ```
 
 The first scan lists the computer settings you can review. On later scans, **Since your last scan** shows additions, edits and removals. **Awaiting your approval** compares the current settings with your decisions. An item you skip stays pending across scans. Returning to an approved value clears that pending change.
@@ -28,7 +37,9 @@ Computer settings and accepted risks have separate decisions. Approving a versio
 
 The review covers computer and administrator config files discovered by the scanner, including MCP server definitions and package pins, hooks, permissions, instructions and agent-related shell settings. It also compares the versions of agent installs and AI editor extensions the scanner identifies. Structured settings are compared by value, individual hooks by their ordered event slot, and instruction text by file. Short descriptions show package versions, public command details or the type of setting that changed. Open the named source file for the full value. If a source is partly read or unreadable, the previous decision is kept and the report names the source needing another check.
 
-History lives in `~/.misconfig/computer-v1/` under your OS account. It holds source paths, labels, short summaries, keyed fingerprints and approval records. Raw config files, environment values and hook bodies stay out of the history. Use `--no-history` for a one-off scan. `--project-only` skips personal history and keeps its existing CI behavior.
+`--history` reads the saved timeline without scanning or making a network request. It shows when misconfig first observed each addition, edit or removal, and which local OS account approved a change or accepted a risk. The time of detection can be later than the edit. A scan cannot identify which person or process edited a file. On a shared login, decisions carry the shared account name. Older preview builds only saved dates for accepted risks, so those entries show an unknown account. Use `--history --json` for the timeline in chronological order, or expand **Computer history** in the static HTML scan report.
+
+History lives in `~/.misconfig/computer-v1/` under your OS account. It holds source paths, labels, short summaries, keyed fingerprints and review decisions. The account that owns these files can edit them. Raw config files, environment values and hook bodies stay out of the history. Use `--no-history` for a one-off scan. `--project-only` skips personal history and keeps its existing CI behavior.
 
 Your coding agents take orders from more files than you think. `CLAUDE.md` and `AGENTS.md` are the ones you see. The rest sit in your home folder and app settings: `~/.claude.json`, `~/.codex/config.toml`, editor settings, plugin and skill folders, shell aliases. Any one of them can turn approvals off, hand an agent your whole disk, or start an MCP server that runs whatever its package publishes next.
 
@@ -70,6 +81,8 @@ npx @misconfig/cli --lookup     # also ask OSV.dev about what's installed
 
 | Option | What it does |
 | --- | --- |
+| `--demo` | Try a version change, a risk decision and their history on a disposable sample computer |
+| `--history` | Read the local timeline of observed changes, approvals and risk acceptances. Add `--json` for machine-readable events |
 | `--explain` | Shows everything each file sets: permission modes, allowed and blocked actions, MCP servers and what they run, hooks, trusted folders, hidden text, and the agents and extensions installed |
 | `--open` | Saves the full report as one page in your temp folder and opens it in your browser. The page has no scripts and loads nothing from the internet |
 | `--lookup` | Also looks up the MCP packages, extensions and agent versions it found on [OSV.dev](https://osv.dev). It lists the names and versions it would send and asks first |
