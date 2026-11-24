@@ -57,3 +57,17 @@ test("the code scanning workflow names this release and pins every other action 
 	assert.equal(readme.match(upload)?.[0], workflow.match(upload)[0]);
 	assert.ok(workflow.includes("security-events: write") && workflow.includes("steps.misconfig.outputs.sarif != ''"));
 });
+
+test("this repository's workflows pin every action to a commit and run its own action", async () => {
+	for (const file of ["tests.yml", "misconfig.yml"]) {
+		const workflow = await read(`.github/workflows/${file}`);
+		const uses = [...workflow.matchAll(/uses: (\S+)/g)].map((match) => match[1]);
+		assert.ok(uses.length, file);
+		for (const action of uses) if (action !== "./") assert.match(action, /@[0-9a-f]{40}$/, `${file}: ${action}`);
+		assert.ok(workflow.includes("persist-credentials: false"), file);
+	}
+	// The tests run on every system and Node.js version the README names.
+	const tests = await read(".github/workflows/tests.yml");
+	for (const name of ["ubuntu-latest", "macos-latest", "windows-latest", "'18'"]) assert.ok(tests.includes(name), name);
+	assert.ok((await read(".github/workflows/misconfig.yml")).includes("uses: ./"));
+});

@@ -1,0 +1,31 @@
+name: A wrong finding
+description: A setting misconfig flags that's safe in your setup, or a finding with the wrong level.
+title: "Wrong finding: "
+body:
+  - type: input
+    id: rule
+    attributes:
+      label: Rule ID
+      description: From the report, such as CC-BYPASS.
+    validations:
+      required: true
+  - type: textarea
+    id: lines
+    attributes:
+      label: The lines it points at
+      description: The relevant lines of the file, with any secrets removed. Use made-up names and values.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it's wrong
+      description: Why the setting is safe in your setup, or which level fits better.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: misconfig version
+      description: What npx @misconfig/cli --version prints.

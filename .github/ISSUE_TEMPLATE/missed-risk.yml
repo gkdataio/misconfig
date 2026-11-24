@@ -1,0 +1,31 @@
+name: A missed risk
+description: A setting or file that puts an agent's machine at risk that misconfig doesn't report.
+title: "Missed risk: "
+body:
+  - type: input
+    id: agent
+    attributes:
+      label: Agent
+      description: The agent that reads the setting, such as Claude Code or Codex.
+    validations:
+      required: true
+  - type: textarea
+    id: lines
+    attributes:
+      label: The setting or file
+      description: The file's path and the relevant lines, with any secrets removed. Use made-up names and values.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: risk
+    attributes:
+      label: What it lets happen
+      description: What an agent, or someone who can reach it, can do because of this setting.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: misconfig version
+      description: What npx @misconfig/cli --version prints.

@@ -1,0 +1,24 @@
+name: Computer review
+description: A change the scanner missed, an approval that no longer matches, or a warning that disappeared after acceptance.
+title: "Computer review: "
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected to see, and what the report showed.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: A small sample config and the order of the scans
+      description: Use made-up names and values. Local history includes paths and account names, and agent session logs can contain private conversations, so leave both out.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: misconfig version and operating system
+      description: What npx @misconfig/cli --version prints, and macOS, Windows or Linux.

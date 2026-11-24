@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: A vulnerability in misconfig
+    url: https://github.com/gkdataio/misconfig/security/advisories/new
+    about: Please report it privately. SECURITY.md says what to include and what to expect.

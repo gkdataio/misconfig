@@ -10,6 +10,7 @@
 - While the action's report prints, GitHub is also told to read no workflow commands, as a second guard.
 - Every rule has a name that needs no finding to fill it in, such as "An MCP server runs an unpinned package". SARIF lists rules by it.
 - `examples/github-actions/code-scanning.yml` is a workflow that runs the action and sends its findings to code scanning.
+- The repository runs its tests on every push and pull request, on Linux, macOS and Windows with Node.js 18, 20, 22 and 24, and checks itself with its own action. Issues have a form for each kind of report in CONTRIBUTING.md.
 
 ## 1.4.0
 

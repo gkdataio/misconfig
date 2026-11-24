@@ -1,0 +1,24 @@
+name: A new agent
+description: An AI coding agent misconfig doesn't know yet.
+title: "New agent: "
+body:
+  - type: input
+    id: agent
+    attributes:
+      label: Agent
+      description: Its name and where its documentation is.
+    validations:
+      required: true
+  - type: textarea
+    id: locations
+    attributes:
+      label: Where it keeps its settings
+      description: The paths on macOS, Windows and Linux, in your home folder and in a project.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Settings worth checking
+      description: Settings that turn off approvals, start MCP servers, run hooks or send data somewhere, if you know them.
