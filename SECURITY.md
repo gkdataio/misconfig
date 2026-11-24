@@ -22,7 +22,8 @@ Please don't open a public issue for a vulnerability, and don't include anyone e
 
 - The `@misconfig/cli` command and everything in this repository.
 - A file or folder that makes a check run code, read something it says it doesn't, send something it says it doesn't, or hang.
-- A crafted file that makes the terminal report or the page `--open` saves show markup or words its checks wouldn't produce.
+- A crafted file that makes the terminal report or the page `--open` saves show markup or words its checks wouldn't produce, or that gives a CI system a command through the log.
+- A rules file given to `--rules` that does more than add findings: one that runs code, makes a check read another file, hides what a built-in rule finds, or makes the check hang.
 - Ways a risky setting can hide from the checks. These are welcome even when they aren't vulnerabilities in the strict sense.
 - A computer approval applied to a different setting, a risk acceptance that hides a finding, or an edit attributed to an agent without a matching local record.
 - Private setting values or session content appearing in saved history, reports or an outbound request. A small example with invented values is enough to report this.

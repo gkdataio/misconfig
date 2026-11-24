@@ -12,7 +12,8 @@
 - `--rules FILE` adds a team's own rules to a check, from a JSON file. A rule names the settings files it reads and what in them makes a finding, and brings its own wording. Its findings are in every kind of output, take points off the score and count for `--fail-on`. `docs/rules.md` explains the format, which may still change, and `examples/rules/company.json` is a file to start from.
 - A rule of your own can only add a finding. It can't run anything, read a file misconfig doesn't already read, or hide what a built-in rule finds, and rules are never taken from a checked project. It holds no regular expression: its files are paths and its tests compare text, so a rules file can't be written to stall a check.
 - Six built-in rules are now written in the same form, as data in `engine/templates.js`: `CU-NO-SANDBOX`, `ZED-ALWAYS-ALLOW`, `ZED-TRUST-ALL`, `CL-YOLO`, `CL-AUTO-COMMANDS` and `AMP-ALLOW-ALL`. They find what they found before.
-- `examples/github-actions/code-scanning.yml` is a workflow that runs the action and sends its findings to code scanning.
+- A project that defines MCP servers by the ten thousand no longer holds a check up for minutes. The time spent listing each agent's servers grew with the square of their number.
+- `examples/github-actions/code-scanning.yml` is a workflow that runs the action and sends its findings to code scanning. Both example workflows stop a job after ten minutes.
 - The repository runs its tests on every push and pull request, on Linux, macOS and Windows with Node.js 18, 20, 22 and 24, and checks itself with its own action. Issues have a form for each kind of report in CONTRIBUTING.md.
 
 ## 1.4.0

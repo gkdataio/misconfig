@@ -415,6 +415,16 @@ test("MCP servers are counted for each agent, not added up across agents", () =>
 	assert.equal(f?.title, "Claude Code has 13 MCP servers");
 });
 
+test("servers by the ten thousand don't slow the check down", () => {
+	// 300 files, the most the command reads, with 150 servers each.
+	const content = JSON.stringify({ mcpServers: Object.fromEntries(Array.from({ length: 150 }, (_, i) => [`s${i}`, { command: "x" }])) });
+	const start = Date.now();
+	const result = check(Array.from({ length: 300 }, (_, i) => ({ path: `packages/app${i}/.mcp.json`, content })));
+	assert.ok(Date.now() - start < 5000, `took ${Date.now() - start} ms`);
+	// Claude Code and Copilot read the same files, and the list they share is reported once.
+	assert.deepEqual(result.findings.filter((f) => f.id === "MCP-MANY").map((f) => f.vars.count), ["45000"]);
+});
+
 test("a file too large to check is named", () => {
 	const r = check([{ path: "CLAUDE.md", size: 500_000, tooLarge: true }, { path: "AGENTS.md", content: "Run the tests.\n" }]);
 	const f = r.findings.find((x) => x.id === "WS-TOO-LARGE");

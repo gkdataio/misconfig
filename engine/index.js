@@ -400,16 +400,22 @@ export function analyze(input, { rules = [] } = {}) {
 	// to different agents aren't all in front of any one of them.
 	// Agents that read the same file, such as Claude Code and Copilot with
 	// .mcp.json, are reported once.
+	// A project can define servers by the hundred thousand, so the lists are
+	// added to and compared in place, never copied or joined into one string.
 	const perAgent = new Map();
 	for (const s of ctx.mcpServers) {
 		if (s.disabled) continue;
-		for (const t of s.file.tools ?? []) perAgent.set(t, [...(perAgent.get(t) ?? []), `${s.file.path}#${s.name}`]);
+		for (const t of s.file.tools ?? []) {
+			if (!perAgent.has(t)) perAgent.set(t, []);
+			perAgent.get(t).push(`${s.file.path}#${s.name}`);
+		}
 	}
-	const reported = new Set();
+	const reported = [];
 	for (const [tool, servers] of perAgent) {
-		const key = servers.sort().join("\n");
-		if (servers.length <= 12 || reported.has(key)) continue;
-		reported.add(key);
+		if (servers.length <= 12) continue;
+		servers.sort();
+		if (reported.some((seen) => seen.length === servers.length && seen.every((name, i) => name === servers[i]))) continue;
+		reported.push(servers);
 		add(ctx, "MCP-MANY", { tool, vars: { tool, count: servers.length } });
 	}
 	checkWorkspace(ctx);
