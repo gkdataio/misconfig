@@ -103,7 +103,8 @@ test("the action's metadata matches what its script reads", async () => {
 test("the action checks the repository, saves SARIF and names the file", async () => {
 	const { code, log, outputs, temp, stdout } = await act({ "fail-on": "none" });
 	assert.equal(code, 0, stdout);
-	assert.match(stdout, /Checked .+\. Everything ran here; nothing was\s+uploaded\./);
+	// A long path to the temp folder moves where the line wraps.
+	assert.match(stdout, /Checked .+\.\s+Everything\s+ran\s+here;\s+nothing\s+was\s+uploaded\./);
 	assert.equal(outputs.sarif, path.join(temp, "misconfig.sarif"));
 	const [sarif] = JSON.parse(await readFile(outputs.sarif, "utf8")).runs;
 	assert.deepEqual(sarif.results.map((r) => r.ruleId).sort(), ["CC-ALLOW-ALL-BASH", "MCP-UNPINNED"]);

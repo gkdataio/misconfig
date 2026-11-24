@@ -5,7 +5,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtemp, mkdir, writeFile, readFile, rm, stat, lstat, access, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, realpath, rm, stat, lstat, access, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,7 +30,9 @@ let home;
 let project;
 
 before(async () => {
-	home = await mkdtemp(path.join(tmpdir(), "misconfig-home-"));
+	// The folder's real path: on macOS the temp folder is a link, and the
+	// command names a project by where it really is.
+	home = await realpath(await mkdtemp(path.join(tmpdir(), "misconfig-home-")));
 	project = path.join(home, "code", "shop");
 	const files = {
 		".claude/settings.json": JSON.stringify({ permissions: { defaultMode: "bypassPermissions" } }, null, 2),
