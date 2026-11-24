@@ -1,0 +1,29 @@
+name: misconfig
+description: Check the files that control AI coding agents in a repository, such as Claude Code, Codex, Cursor and Copilot settings, for risky settings and known malware.
+author: GK Data LLC
+
+branding:
+  icon: shield
+  color: yellow
+
+inputs:
+  path:
+    description: The folder the repository is checked out in. Defaults to the workspace.
+    required: false
+    default: ''
+  fail-on:
+    description: 'Fail the step when a finding at this level or worse is found: critical, high, medium or low. Use none to report without failing.'
+    required: false
+    default: high
+  sarif:
+    description: Where to save the findings as SARIF 2.1.0. Defaults to misconfig.sarif in the runner's temp folder.
+    required: false
+    default: ''
+
+outputs:
+  sarif:
+    description: The SARIF file's path, for github/codeql-action/upload-sarif. Empty when the check failed or stopped early, so a partial file is never uploaded.
+
+runs:
+  using: node24
+  main: action/main.js

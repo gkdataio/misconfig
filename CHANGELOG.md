@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.5.0
+
+- `--jsonl` prints the findings as JSON Lines: one finding on each line, worst first, with the same keys every time, for jq, grep and log collectors. The README lists the keys, and a 1.x release won't rename or remove one. Marks that reorder text, and characters that some programs treat as line breaks, are written as `\u` escapes, so a checked file can't add a line or change how one reads on screen.
+- `--sarif FILE` also saves the findings as SARIF 2.1.0, for GitHub code scanning and other SARIF viewers. The report prints as before. Critical and high findings are errors, medium ones are warnings, and low and info ones are notes, and each rule's security severity sits in GitHub's band for its level. Files are named from the checked folder, and files in your home folder from `HOME`, not by their full paths. A check that stopped early is marked unfinished.
+- The SARIF file is written under another name and moved into place. In a project from someone else, a link left at that path is replaced, not followed into another file.
+- A GitHub Action, `gkdataio/misconfig`, runs the check from this repository at the commit or tag a workflow names. Nothing is fetched from npm. It checks only the repository, saves the SARIF file and names it as an output for `github/codeql-action/upload-sarif`, unless the check failed or stopped early: uploading a partial file would mark the findings it didn't reach as fixed.
+- While the action's report prints, GitHub is told to read no workflow commands. A name in a checked file, quoted in the report, can't add an annotation to the run or mask text in its log.
+- Every rule has a name that needs no finding to fill it in, such as "An MCP server runs an unpinned package". SARIF lists rules by it.
+- `examples/github-actions/code-scanning.yml` is a workflow that runs the action and sends its findings to code scanning.
+
 ## 1.4.0
 
 - An optional `--attribute` scan matches existing Claude Code and Codex file-edit records to observed settings. `--i-edited` records a personal claim. The timeline shows the editor evidence alongside the approving account.

@@ -37,3 +37,23 @@ test("the README, changelog and example workflow match the shipping CLI", async 
 	assert.ok(readme.includes("npx @misconfig/cli@latest --demo"));
 	assert.ok(workflow.includes("--project-only --fail-on high"));
 });
+
+test("the code scanning workflow names this release and pins every other action to a commit", async () => {
+	const { version } = JSON.parse(await read("package.json"));
+	const readme = await read("README.md");
+	const workflow = await read("examples/github-actions/code-scanning.yml");
+	for (const text of [readme, workflow]) {
+		const tags = [...text.matchAll(/gkdataio\/misconfig@v(\d+\.\d+\.\d+)/g)].map((match) => match[1]);
+		assert.ok(tags.length && tags.every((tag) => tag === version));
+	}
+	for (const file of ["misconfig.yml", "code-scanning.yml"]) {
+		const uses = [...(await read(`examples/github-actions/${file}`)).matchAll(/uses: (\S+)@(\S+)/g)];
+		assert.ok(uses.length, file);
+		for (const [, action, ref] of uses) if (action !== "gkdataio/misconfig") assert.match(ref, /^[0-9a-f]{40}$/, `${file}: ${action}`);
+	}
+	// The README shows the workflow's own upload step.
+	const upload = /github\/codeql-action\/upload-sarif@[0-9a-f]{40} # v[\d.]+/;
+	assert.ok(workflow.match(upload));
+	assert.equal(readme.match(upload)?.[0], workflow.match(upload)[0]);
+	assert.ok(workflow.includes("security-events: write") && workflow.includes("steps.misconfig.outputs.sarif != ''"));
+});

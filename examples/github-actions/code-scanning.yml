@@ -1,0 +1,39 @@
+name: Misconfig
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  agent-config:
+    name: Agent config
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Lets the last step send the findings to code scanning.
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # To pin the code as well as the release, replace the tag with the
+      # commit it points to.
+      - name: Check the checked-out repository
+        id: misconfig
+        uses: gkdataio/misconfig@v1.5.0
+        with:
+          fail-on: high
+      # Runs when the check fails on a finding too. The output is empty when
+      # the check itself failed or stopped early, and then nothing is sent.
+      - name: Send the findings to code scanning
+        if: ${{ !cancelled() && steps.misconfig.outputs.sarif != '' }}
+        uses: github/codeql-action/upload-sarif@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          sarif_file: ${{ steps.misconfig.outputs.sarif }}
+          category: misconfig

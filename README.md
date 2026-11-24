@@ -11,11 +11,26 @@
 
 # misconfig
 
-misconfig checks the settings that control Claude Code, Codex and other coding agents. It shows which file sets a permission, starts an MCP server or runs a hook, explains the risk, and gives you a fix. Version 1.4 adds a local history of what changed on your computer and who approved it.
+misconfig checks the settings that control Claude Code, Codex and other coding agents. It shows which file sets a permission, starts an MCP server or runs a hook, explains the risk, and gives you a fix. Version 1.5 adds JSON Lines and SARIF output and a GitHub Action, so findings can go to scripts, log collectors and GitHub code scanning.
 
 To hear when a release ships, choose **Watch → Custom → Releases** on the [GitHub repository](https://github.com/gkdataio/misconfig), or subscribe to the [release feed](https://github.com/gkdataio/misconfig/releases.atom). These channels also work for people who keep using 1.3.2.
 
-## New in 1.4
+## New in 1.5
+
+Findings can now go to other programs. The report you read is the same.
+
+```sh
+npx @misconfig/cli@1.5.0 --jsonl
+npx @misconfig/cli@1.5.0 --sarif misconfig.sarif
+```
+
+`--jsonl` prints the findings as JSON Lines: one finding on each line, worst first, for `jq`, `grep` and log collectors. [Findings as JSON Lines](https://github.com/gkdataio/misconfig#findings-as-json-lines) lists what each line holds.
+
+`--sarif FILE` also saves the findings as SARIF 2.1.0, the format GitHub code scanning and other viewers read. The report still prints.
+
+On GitHub, the new action runs the check from this repository at the commit or tag your workflow names, without fetching anything from npm, and saves the SARIF file for code scanning. [In CI](https://github.com/gkdataio/misconfig#in-ci) has the workflow.
+
+## Computer review
 
 The demo requires CLI 1.4 or newer and Node.js 18 or later. Try it on a sample profile. On Windows, use `npx.cmd` if PowerShell blocks `npx`.
 
@@ -28,9 +43,9 @@ The demo changes a sample calendar server from 1.2.3 to 1.2.4. A sample Codex re
 ### Review your computer
 
 ```sh
-npx @misconfig/cli@1.4.0
-npx @misconfig/cli@1.4.0 --review
-npx @misconfig/cli@1.4.0 --history
+npx @misconfig/cli@1.5.0
+npx @misconfig/cli@1.5.0 --review
+npx @misconfig/cli@1.5.0 --history
 ```
 
 Your first scan lists the settings available for review. **Since your last scan** shows later additions, edits and removals. **Awaiting your approval** also includes changes you skipped. The same local history follows you across project folders.
@@ -45,11 +60,11 @@ misconfig compares the computer and administrator settings it discovers, includi
 
 ### Who changed a setting?
 
-Run `npx @misconfig/cli@1.4.0 --offline --attribute` to match observed edits against local Claude Code or Codex records. This works after approval, too. To read particular sessions, pass `--session "path/to/session.jsonl"` for each one.
+Run `npx @misconfig/cli@1.5.0 --offline --attribute` to match observed edits against local Claude Code or Codex records. This works after approval, too. To read particular sessions, pass `--session "path/to/session.jsonl"` for each one.
 
 An agent attribution requires a completed file tool, the same file, the exact change to the setting, and a tool timestamp between the two scans. Supported records include Claude Code’s Edit and Write results and Codex’s completed file changes with numbered diffs. Reconstructed patches must also match the saved file fingerprints. A shell command, file owner, or nearby agent session alone leaves the author unknown. A matching record identifies a recorded edit. Other unlogged writes can produce the same setting, and local records are editable.
 
-If you made an edit yourself, use its `e-` ID from `--history`. For example, `npx @misconfig/cli@1.4.0 --i-edited e-4` records your OS account as **self-reported**. Conflicting sources appear as uncertain. An edit with no matching evidence stays **Edit author unknown**.
+If you made an edit yourself, use its `e-` ID from `--history`. For example, `npx @misconfig/cli@1.5.0 --i-edited e-4` records your OS account as **self-reported**. Conflicting sources appear as uncertain. An edit with no matching evidence stays **Edit author unknown**.
 
 Session records can contain private conversations and tool inputs. Only `--attribute` or `--session` reads them on your computer. Automatic discovery searches the last seven days in Claude’s projects and Codex’s sessions and archived sessions, honoring their config directory overrides. The search reads up to 48 local files, 4 MiB from the end of each, up to 32 MiB total. It reports partial coverage when a limit or read error is encountered. Only matching source labels and timestamps enter the history.
 
@@ -106,18 +121,68 @@ npx @misconfig/cli --lookup     # also ask OSV.dev about what's installed
 | `--project-only` | Skips the agent settings on this computer |
 | `--fail-on <level>` | Exits with code 1 if it finds anything at that level or worse: `critical`, `high`, `medium` or `low` |
 | `--json` | Prints the full result as JSON |
+| `--jsonl` | Prints the findings as JSON Lines, one finding on each line |
+| `--sarif FILE` | Also saves the findings in `FILE` as SARIF 2.1.0, for GitHub code scanning and other SARIF viewers |
 | `--yes` | Runs `--lookup` without asking, for scripts |
 | `--help` / `--version` | Print the supported options or installed version |
+
+### Findings as JSON Lines
+
+```sh
+npx @misconfig/cli --jsonl | jq -r 'select(.severity == "high") | "\(.rule)  \(.file):\(.line)"'
+```
+
+Each line is one finding:
+
+| Key | What it holds |
+| --- | --- |
+| `type` | `finding`. A later release may print other kinds of lines, so select on it |
+| `rule` | The rule's ID, such as `MCP-UNPINNED` |
+| `severity` | `critical`, `high`, `medium`, `low` or `info` |
+| `category` | `permissions`, `mcp`, `instructions`, `hooks`, `workspace` or `installs` |
+| `agent` | The agent it affects, such as `Claude Code`, or `null` |
+| `title`, `why`, `fix` | The finding, in the report's words |
+| `file`, `line` | Where it is. A file in the checked folder is named from that folder, one in your home folder starts with `~/`, and any other has its full path. `null` when a finding isn't about one file or one line |
+| `evidence` | The line the finding points at, with secrets masked, or `null` |
+| `ruleUrl` | The rule at [misconfig.ai/rules](https://misconfig.ai/rules) |
+| `checkedAt` | When the check ran, in UTC |
+| `ruleset`, `cli` | The versions of the rules and of the CLI that made the line |
+
+A 1.x release can add a key and won't rename or remove one. Every key is always there. Marks that reorder text, and characters that some programs treat as line breaks, are written as `\u` escapes, so a checked file can't add a line or change how one reads on screen. A check that finds nothing prints nothing, and the exit code is the same as without `--jsonl`.
 
 ### In CI
 
 After checkout, run a project-only scan before installing the project's dependencies. Pin the CLI version in your workflow. This mode checks repository findings and skips personal approvals and history.
 
 ```sh
-npx --yes @misconfig/cli@1.4.0 --project-only --fail-on high
+npx --yes @misconfig/cli@1.5.0 --project-only --fail-on high
 ```
 
 On GitHub, copy the [example workflow](https://github.com/gkdataio/misconfig/blob/main/examples/github-actions/misconfig.yml) into `.github/workflows/misconfig.yml`. It checks out the repository, sets up Node.js and runs the CLI as a shell step. The `--yes` before the package name lets npx fetch the pinned CLI.
+
+To see the findings in the repository's Security tab and on pull requests, use the action with code scanning. Copy the [code scanning workflow](https://github.com/gkdataio/misconfig/blob/main/examples/github-actions/code-scanning.yml) instead:
+
+```yaml
+- uses: gkdataio/misconfig@v1.5.0
+  id: misconfig
+  with:
+    fail-on: high
+- uses: github/codeql-action/upload-sarif@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+  if: ${{ !cancelled() && steps.misconfig.outputs.sarif != '' }}
+  with:
+    sarif_file: ${{ steps.misconfig.outputs.sarif }}
+    category: misconfig
+```
+
+The action runs the CLI from this repository at the commit or tag you name, so nothing is fetched from npm and the checked project can't change what runs. It checks only the repository, never the runner's own settings. While the report prints, it tells GitHub to read no workflow commands, so a name in a checked file can't add an annotation to the run or mask text in its log. Code scanning is available for public repositories, and for organization-owned ones with GitHub Code Security.
+
+| Input | What it does |
+| --- | --- |
+| `fail-on` | Fails the step at this level or worse: `critical`, `high` (the default), `medium` or `low`. `none` reports without failing |
+| `path` | The folder the repository is checked out in. Defaults to the workspace |
+| `sarif` | Where to save the SARIF file. Defaults to `misconfig.sarif` in the runner's temp folder |
+
+The `sarif` output is the file's path. It's empty when the check failed or stopped early, so a partial file is never uploaded: code scanning would mark the findings it didn't reach as fixed.
 
 With `--fail-on high`, exit `0` means the scan finished below the threshold, `1` means a high or critical finding, and `2` means an error or an incomplete scan with no finding at the threshold. An interrupted prompt returns `130`.
 
@@ -126,6 +191,7 @@ With `--fail-on high`, exit `0` means the scan finished below the threshold, `1`
 - Computer scans save review history under `~/.misconfig/computer-v1/`. It contains paths, labels, short summaries, keyed fingerprints, observation times and review decisions. The OS account that owns the files can edit them. `--no-history` skips this storage. HTML and JSON reports can include paths and reviewer names, so check the contents before sharing them.
 - The malware-list request to misconfig.ai carries the CLI version and operating system family. Interactive computer scans also check the public package version on npm. `--offline` skips both requests, and `DO_NOT_TRACK=1` keeps the malware-list request from being counted.
 - `--lookup` sends package names and versions to OSV.dev after the prompt, or with the CLI's `--yes`. The `npx` launcher may contact npm to fetch the CLI before its own offline mode starts. An installed copy or the extracted demo works without that download.
+- `--jsonl` and `--sarif` upload nothing. Both hold what the report shows for each finding: the file, the finding's own words and, in JSON Lines, the masked line it points at. SARIF names a file in your home folder from `HOME`, not by its full path. Read either before you share it.
 - Credential files such as `.env` and `id_rsa`, and programs inside skills, are listed by name only and never opened. Secrets inside agent files are masked as they're read.
 
 The [privacy policy](https://misconfig.ai/privacy) lists everything misconfig.ai receives and how long it's kept.
@@ -148,8 +214,10 @@ misconfig is plain JavaScript with no dependencies, so what you install is what'
 | [`engine/locations.js`](https://github.com/gkdataio/misconfig/blob/main/engine/locations.js) | Where each agent keeps its files on macOS, Windows and Linux |
 | [`lib/discover.js`](https://github.com/gkdataio/misconfig/blob/main/lib/discover.js) | Which files the command reads, and the limits on what it reads |
 | [`lib/html.js`](https://github.com/gkdataio/misconfig/blob/main/lib/html.js) | The page `--open` saves |
+| [`lib/formats.js`](https://github.com/gkdataio/misconfig/blob/main/lib/formats.js) | Findings as JSON Lines and as SARIF |
 | [`lib/computer-review.js`](https://github.com/gkdataio/misconfig/blob/main/lib/computer-review.js) | Changes, approvals and accepted risks |
 | [`lib/edit-attribution.js`](https://github.com/gkdataio/misconfig/blob/main/lib/edit-attribution.js) | How optional local edit records are matched |
+| [`action/main.js`](https://github.com/gkdataio/misconfig/blob/main/action/main.js) | The GitHub Action |
 
 ## Contributing
 

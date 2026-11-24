@@ -5,7 +5,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtemp, mkdir, writeFile, readFile, rm, stat, access, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm, stat, lstat, access, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -209,7 +209,7 @@ test("--contribute isn't an option", async () => {
 test("--help lists only the options there are, and what each one sends", async () => {
 	const { code, stdout } = await run(["--help"]);
 	assert.equal(code, 0);
-	for (const option of ["--explain", "--lookup", "--open", "--offline", "--yes", "--json", "--project-only", "--fail-on", "--attribute", "--i-edited", "--session", "--check-update", "--no-update-check"]) assert.ok(stdout.includes(option), option);
+	for (const option of ["--explain", "--lookup", "--open", "--offline", "--yes", "--json", "--jsonl", "--sarif FILE", "--project-only", "--fail-on", "--attribute", "--i-edited", "--session", "--check-update", "--no-update-check"]) assert.ok(stdout.includes(option), option);
 	assert.match(stdout, /Interactive computer scans also check for a newer CLI on npm/);
 	for (const gone of ["--share", "--contribute", "encrypt", "private"]) assert.ok(!stdout.includes(gone), gone);
 	assert.match(stdout, /Nothing else is sent\s+unless you use --lookup\./);
@@ -333,6 +333,108 @@ test("today's list is downloaded only from https addresses or this computer", as
 		assert.equal(code, 0, address);
 		assert.match(stdout, /today's list couldn't be\s+downloaded, so the check used the one in this release/, address);
 	}
+});
+
+// --- Findings for other programs ----------------------------------------------------
+
+test("--jsonl prints the findings one to a line, and nothing else", async () => {
+	const { version } = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+	const { code, stdout } = await run(["--jsonl"]);
+	assert.equal(code, 0);
+	const records = stdout.trimEnd().split("\n").map((line) => JSON.parse(line));
+	const full = JSON.parse((await run(["--json"])).stdout);
+	assert.deepEqual(records.map((r) => [r.rule, r.file, r.line]), full.findings.map((f) => [f.id, f.file, f.line]));
+	assert.ok(records.every((r) => r.type === "finding" && r.cli === version && r.ruleset === full.version));
+	for (const leak of [FAKE_TOKEN, ENV_VALUE, "someone@example.com"]) assert.ok(!stdout.includes(leak), `the lines have ${leak}`);
+	// A project with nothing to report prints nothing.
+	const clean = await scratchProject({ "CLAUDE.md": "# Notes\nRun the tests.\n" });
+	assert.deepEqual(await run(["--jsonl", "--project-only", clean]), { code: 0, stdout: "", stderr: "" });
+});
+
+test("--sarif saves the findings beside the report, and uploads nothing", async () => {
+	const stub = await siteStub();
+	const file = path.join(await mkdtemp(path.join(home, "sarif-")), "misconfig.sarif");
+	try {
+		const { code, stdout } = await run(["--project-only", "--sarif", file], { env: stub.online });
+		assert.equal(code, 0, stdout);
+		assert.deepEqual(stub.requests.map((r) => `${r.method} ${r.url}`), ["GET /api/known"], "only today's list is downloaded");
+		// The report is still printed, then where the file is.
+		assert.match(stdout, /What controls your agents/);
+		assert.ok(stdout.includes(`Findings saved as SARIF\n  ${file}\n`), stdout);
+		assert.match(stdout, /Nothing was uploaded\./);
+		if (process.platform !== "win32") assert.equal((await stat(file)).mode & 0o777, 0o600, "only you can read it");
+		const text = await readFile(file, "utf8");
+		const [sarif] = JSON.parse(text).runs;
+		const local = JSON.parse((await run(["--json", "--project-only"])).stdout);
+		assert.deepEqual(sarif.results.map((r) => r.ruleId), local.findings.map((f) => f.id));
+		assert.equal(sarif.tool.driver.name, "misconfig");
+		assert.deepEqual(sarif.invocations, [{ executionSuccessful: true }]);
+		// Files are named from the checked folder, and the folder isn't.
+		for (const r of sarif.results) for (const l of r.locations ?? []) assert.equal(l.physicalLocation.artifactLocation.uriBaseId, "%SRCROOT%");
+		assert.ok(!text.includes(home) && !text.includes(JSON.stringify(home).slice(1, -1)), "the file names this computer's folders");
+	} finally {
+		await stub.close();
+	}
+});
+
+test("--sarif names files under the home folder without the account", async () => {
+	const file = path.join(await mkdtemp(path.join(home, "sarif-")), "computer.sarif");
+	const { code } = await run(["--sarif", file, "--no-history"]);
+	assert.equal(code, 0);
+	const text = await readFile(file, "utf8");
+	const [sarif] = JSON.parse(text).runs;
+	const bypass = sarif.results.find((r) => r.ruleId === "CC-BYPASS");
+	assert.deepEqual(bypass.locations[0].physicalLocation.artifactLocation, { uri: ".claude/settings.json", uriBaseId: "HOME" });
+	assert.deepEqual(Object.keys(sarif.originalUriBaseIds).sort(), ["%SRCROOT%", "HOME"]);
+	for (const leak of [home, JSON.stringify(home).slice(1, -1), FAKE_TOKEN, ENV_VALUE, "someone@example.com"]) assert.ok(!text.includes(leak), `the file has ${leak}`);
+});
+
+test("--sarif leaves stdout to --json and --jsonl, and is saved before --fail-on decides", async () => {
+	const dir = await mkdtemp(path.join(home, "sarif-"));
+	const json = await run(["--project-only", "--json", "--sarif", path.join(dir, "a.sarif")]);
+	assert.ok(JSON.parse(json.stdout).findings, "stdout is the JSON alone");
+	assert.ok(json.stderr.includes(`Findings saved as SARIF\n  ${path.join(dir, "a.sarif")}\n`), json.stderr);
+	const lines = await run(["--jsonl", "--sarif=" + path.join(dir, "b.sarif"), "--no-history"]);
+	assert.ok(lines.stdout.trimEnd().split("\n").every((line) => JSON.parse(line).type === "finding"));
+	assert.ok(await exists(path.join(dir, "b.sarif")));
+	const gate = await run(["--fail-on", "high", "--no-history", "--sarif", path.join(dir, "c.sarif")]);
+	assert.equal(gate.code, 1);
+	assert.ok(JSON.parse(await readFile(path.join(dir, "c.sarif"), "utf8")).runs[0].results.length);
+});
+
+test("--sarif replaces a link at its path and doesn't write through it", async (t) => {
+	const dir = await scratchProject({ "CLAUDE.md": "# Notes\nRun the tests.\n", "keep.txt": "unchanged\n" });
+	const file = path.join(dir, "misconfig.sarif");
+	try {
+		await symlink(path.join(dir, "keep.txt"), file);
+	} catch {
+		t.skip("this system can't create symbolic links");
+		return;
+	}
+	const { code, stderr } = await run(["--project-only", "--sarif", file, dir]);
+	assert.equal(code, 0, stderr);
+	assert.equal(await readFile(path.join(dir, "keep.txt"), "utf8"), "unchanged\n", "the linked file was written to");
+	assert.ok((await lstat(file)).isFile(), "the link is now the file");
+	assert.deepEqual(JSON.parse(await readFile(file, "utf8")).runs[0].results, []);
+});
+
+test("--jsonl and --sarif say so when they can't do what was asked", async () => {
+	const dir = await mkdtemp(path.join(home, "sarif-"));
+	for (const [args, message] of [
+		[["--json", "--jsonl"], /Choose --json or --jsonl\./],
+		[["--sarif"], /--sarif needs a file to save the findings in/],
+		[["--sarif", "--json"], /--sarif needs a file to save the findings in/],
+		[["--sarif", "a.sarif", "--sarif", "b.sarif"], /Choose one file for --sarif\./],
+		[["--history", "--jsonl"], /as a separate command/],
+		[["--check-update", "--sarif", path.join(dir, "x.sarif")], /as a separate command/],
+		[["--demo", "--jsonl"], /Use --demo to review the sample computer/],
+		[["--project-only", "--sarif", path.join(dir, "missing", "x.sarif")], /The SARIF file wasn't saved at .+: the folder it's in doesn't exist\./],
+	]) {
+		const { code, stderr } = await run(args);
+		assert.equal(code, 2, args.join(" "));
+		assert.match(stderr, message, args.join(" "));
+	}
+	assert.deepEqual((await run(["--json", "--jsonl"])).stdout, "", "no check ran");
 });
 
 // --- Files on disk ------------------------------------------------------------------
