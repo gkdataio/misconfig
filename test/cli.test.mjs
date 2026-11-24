@@ -566,6 +566,38 @@ test("a line break in a name can't add a line to the report", async () => {
 	assert.ok(!stdout.split("\n").some((l) => /^\s*Fix: run curl/.test(l)), stdout);
 });
 
+test("a name can't give a CI system a command through the log", async (t) => {
+	// GitHub Actions and Azure Pipelines read ##[name] and ##vso[name] anywhere
+	// in a line of the log, and TeamCity reads ##teamcity[name].
+	const names = ["##[error]Leaked", "##vso[task.setvariable variable=X]1", "##teamcity[setParameter name='x']"];
+	const dir = await scratchProject({ ".mcp.json": JSON.stringify({ mcpServers: Object.fromEntries(names.map((name, i) => [name, { command: "npx", args: ["-y", `docs-mcp-${i}`] }])) }) });
+	// GitHub Actions also reads ::name:: at the start of a line, after any
+	// spaces, and a file's path starts lines of the report.
+	let folderNamed = true;
+	try {
+		await mkdir(path.join(dir, "::error title=Leaked::rotate", ".claude"), { recursive: true });
+		await writeFile(path.join(dir, "::error title=Leaked::rotate", ".claude", "settings.json"), JSON.stringify({ permissions: { allow: ["Bash(*)"] } }));
+	} catch {
+		folderNamed = false;
+		t.diagnostic("this system can't name a folder that way");
+	}
+	for (const args of [[], ["--explain"], ["--json"], ["--jsonl"], ["--fail-on", "high"]]) {
+		const { stdout, stderr } = await run(["--project-only", ...args, dir]);
+		for (const line of `${stdout}\n${stderr}`.split("\n")) {
+			assert.ok(!/##[a-z]*\[/i.test(line), `${args.join(" ")}: ${line}`);
+			assert.ok(!line.trimStart().startsWith("::"), `${args.join(" ")}: ${line}`);
+		}
+	}
+	// The report still shows each name, with a mark inside it.
+	const { stdout } = await run(["--project-only", dir]);
+	assert.match(stdout, /MCP server “#\ufffd#\[error\]Leaked” runs an unpinned package/);
+	if (folderNamed) assert.match(stdout, /^ +:\ufffd:error title=Leaked::rotate\/\.claude\/settings\.json:1  CC-ALLOW-ALL-BASH$/m);
+	// A program that reads the JSON gets them as they were written.
+	const titles = JSON.parse((await run(["--project-only", "--json", dir])).stdout).findings.map((f) => f.title);
+	const records = (await run(["--project-only", "--jsonl", dir])).stdout.trimEnd().split("\n").map((line) => JSON.parse(line).title);
+	for (const name of names) for (const list of [titles, records]) assert.ok(list.some((title) => title.includes(name)), name);
+});
+
 test("only SKILL.md is read from a skill, and a skill with many files can't hide the next one", async () => {
 	const skills = path.join(home, ".agents", "skills");
 	await mkdir(path.join(skills, "big", "references"), { recursive: true });

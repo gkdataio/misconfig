@@ -174,7 +174,7 @@ To see the findings in the repository's Security tab and on pull requests, use t
     category: misconfig
 ```
 
-The action runs the CLI from this repository at the commit or tag you name, so nothing is fetched from npm and the checked project can't change what runs. It checks only the repository, never the runner's own settings. While the report prints, it tells GitHub to read no workflow commands, so a name in a checked file can't add an annotation to the run or mask text in its log. Code scanning is available for public repositories, and for organization-owned ones with GitHub Code Security.
+The action runs the CLI from this repository at the commit or tag you name, so nothing is fetched from npm and the checked project can't change what runs. It checks only the repository, never the runner's own settings. Code scanning is available for public repositories, and for organization-owned ones with GitHub Code Security.
 
 | Input | What it does |
 | --- | --- |
@@ -185,6 +185,8 @@ The action runs the CLI from this repository at the commit or tag you name, so n
 The `sarif` output is the file's path. It's empty when the check failed or stopped early, so a partial file is never uploaded: code scanning would mark the findings it didn't reach as fixed.
 
 With `--fail-on high`, exit `0` means the scan finished below the threshold, `1` means a high or critical finding, and `2` means an error or an incomplete scan with no finding at the threshold. An interrupted prompt returns `130`.
+
+A name in a checked file can't give the CI system a command through the log. Where one spells a command that GitHub Actions, Azure Pipelines or TeamCity reads from a log, such as `##[error]`, the report shows � inside it and JSON output writes it with a `\u` escape. The action also tells GitHub to read no workflow commands while the report prints.
 
 ## Privacy
 
