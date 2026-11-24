@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { analyze } from "../engine/index.js";
 import { LEVELS, RULES } from "../engine/catalog.js";
 import { maskSecrets } from "../engine/mask.js";
+import { readTemplate } from "../engine/templates.js";
 import { jsonLines, sarif, stringify } from "../lib/formats.js";
 import { SAMPLE } from "./sample.js";
 
@@ -214,4 +215,42 @@ test("SARIF holds no more findings than GitHub accepts, worst first", () => {
 	assert.equal(results[0].ruleId, worst.id);
 	assert.deepEqual(tool.driver.rules.map((r) => r.id), [worst.id, least.id]);
 	assert.deepEqual(invocations, [{ executionSuccessful: true, toolExecutionNotifications: [{ level: "warning", message: { text: "This file has the 25,000 worst findings. 1 more was left out." } }] }]);
+});
+
+// --- A company's own rules ---------------------------------------------------------
+
+test("a rule of your own is described by itself, and links only to its reference", () => {
+	const own = (changes) => readTemplate({ name: "Zed shares usage data", severity: "low", category: "permissions", why: "{file} sends usage data.", fix: "Set telemetry.metrics to false in {file}.", files: ["**/.zed/settings.json"], match: [{ path: "telemetry.metrics", equals: true }], ...changes });
+	const rules = [own({ id: "ACME-METRICS", reference: "https://wiki.acme.example/zed?(a)[b]" }), own({ id: "ACME-METRICS-TOO", severity: "info" })];
+	const result = analyze({ root: "app", files: [{ path: ".zed/settings.json", content: '{\n  "telemetry": { "metrics": true },\n  "session": { "trust_all_worktrees": true }\n}\n' }] }, { rules });
+
+	const lines = records(result);
+	assert.deepEqual(lines.map((r) => [r.rule, r.ruleUrl]), [
+		["ZED-TRUST-ALL", "https://misconfig.ai/rules#ZED-TRUST-ALL"],
+		["ACME-METRICS", "https://wiki.acme.example/zed?(a)[b]"],
+		["ACME-METRICS-TOO", null],
+	]);
+	assert.deepEqual(Object.keys(lines[1]), Object.keys(lines[0]), "the same keys as any other finding");
+
+	const { tool, results } = run(result);
+	const [builtIn, linked, bare] = tool.driver.rules;
+	assert.equal(builtIn.helpUri, "https://misconfig.ai/rules#ZED-TRUST-ALL");
+	assert.deepEqual(linked, {
+		id: "ACME-METRICS",
+		shortDescription: { text: "Zed shares usage data" },
+		fullDescription: { text: `Zed shares usage data. ${LEVELS.low}` },
+		// As text only: an address from a rules file isn't written into Markdown.
+		help: { text: "What ACME-METRICS looks for, why it matters and how to fix it: https://wiki.acme.example/zed?(a)[b]" },
+		helpUri: "https://wiki.acme.example/zed?(a)[b]",
+		defaultConfiguration: { level: "note" },
+		properties: { tags: ["security", "permissions"], "security-severity": "2.5" },
+	});
+	assert.deepEqual(bare, {
+		id: "ACME-METRICS-TOO",
+		shortDescription: { text: "Zed shares usage data" },
+		fullDescription: { text: `Zed shares usage data. ${LEVELS.info}` },
+		defaultConfiguration: { level: "note" },
+		properties: { tags: ["security", "permissions"] },
+	});
+	assert.deepEqual(results.map((r) => [r.ruleId, r.ruleIndex, r.level, r.locations[0].physicalLocation.region.startLine]), [["ZED-TRUST-ALL", 0, "warning", 3], ["ACME-METRICS", 1, "note", 2], ["ACME-METRICS-TOO", 2, "note", 2]]);
 });

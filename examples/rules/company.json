@@ -1,0 +1,29 @@
+{
+	"rules": [
+		{
+			"id": "ACME-GATEWAY",
+			"name": "Claude Code doesn't use the company gateway",
+			"severity": "high",
+			"category": "permissions",
+			"agent": "Claude Code",
+			"why": "env.ANTHROPIC_BASE_URL in {file} isn't the company gateway, so prompts and code leave without its logging and data controls.",
+			"fix": "Set env.ANTHROPIC_BASE_URL to https://llm-gateway.acme.example in {file}.",
+			"reference": "https://wiki.acme.example/ai-agents#gateway",
+			"files": ["~/.claude/settings.json"],
+			"match": [{ "not": { "path": "env.ANTHROPIC_BASE_URL", "equals": "https://llm-gateway.acme.example" } }]
+		},
+		{
+			"id": "ACME-DEPLOY-APPROVED",
+			"name": "A project lets Claude Code run the deploy script without asking",
+			"severity": "high",
+			"category": "permissions",
+			"agent": "Claude Code",
+			"why": "permissions.allow in {file} approves the deploy script ahead of time, so a prompt injection can ship to production.",
+			"fix": "Remove the deploy script from permissions.allow in {file}. Deploys go through the release pipeline.",
+			"files": ["**/.claude/settings.json", "**/.claude/settings.local.json"],
+			"scope": "project",
+			"match": [{ "path": "permissions.allow.*", "startsWith": "Bash(./scripts/deploy.sh" }],
+			"line": "scripts/deploy.sh"
+		}
+	]
+}

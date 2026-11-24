@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { CATEGORIES, LEVELS } from "../engine/catalog.js";
+import { RULE_KEYS, RULE_TESTS, readTemplate } from "../engine/templates.js";
 
 const read = (file) => readFile(new URL(`../${file}`, import.meta.url), "utf8");
 
@@ -70,4 +72,21 @@ test("this repository's workflows pin every action to a commit and run its own a
 	const tests = await read(".github/workflows/tests.yml");
 	for (const name of ["ubuntu-latest", "macos-latest", "windows-latest", "'18'"]) assert.ok(tests.includes(name), name);
 	assert.ok((await read(".github/workflows/misconfig.yml")).includes("uses: ./"));
+});
+
+test("the rules format is documented as the command reads it", async () => {
+	const doc = await read("docs/rules.md");
+	const readme = await read("README.md");
+	// Every key and test has its row, and every level and category is named.
+	for (const key of [...RULE_KEYS, ...RULE_TESTS]) assert.ok(doc.includes(`\n| \`${key}\` |`), `${key} has no row`);
+	for (const word of [...Object.keys(LEVELS), ...Object.keys(CATEGORIES)]) assert.ok(doc.includes(`\`${word}\``), word);
+	// The rules shown load, and say what the example file's rule of the same name says.
+	const shown = (text) => JSON.parse(/```json\n(\{\n  "rules": [\s\S]*?)```/.exec(text)[1]).rules;
+	const example = JSON.parse(await read("examples/rules/company.json")).rules;
+	for (const rules of [shown(doc), shown(readme), example]) for (const rule of rules) assert.equal(readTemplate(rule).id, rule.id);
+	for (const rule of [...shown(doc), ...shown(readme)]) {
+		const same = example.find((r) => r.id === rule.id);
+		for (const key of ["name", "severity", "why", "fix", "files", "match"]) assert.deepEqual(rule[key], same[key], `${rule.id}: ${key}`);
+	}
+	assert.ok(readme.includes("https://github.com/gkdataio/misconfig/blob/main/docs/rules.md") && readme.includes("https://github.com/gkdataio/misconfig/blob/main/examples/rules/company.json"));
 });

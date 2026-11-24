@@ -209,7 +209,7 @@ test("--contribute isn't an option", async () => {
 test("--help lists only the options there are, and what each one sends", async () => {
 	const { code, stdout } = await run(["--help"]);
 	assert.equal(code, 0);
-	for (const option of ["--explain", "--lookup", "--open", "--offline", "--yes", "--json", "--jsonl", "--sarif FILE", "--project-only", "--fail-on", "--attribute", "--i-edited", "--session", "--check-update", "--no-update-check"]) assert.ok(stdout.includes(option), option);
+	for (const option of ["--explain", "--lookup", "--open", "--offline", "--yes", "--json", "--jsonl", "--sarif FILE", "--rules FILE", "--project-only", "--fail-on", "--attribute", "--i-edited", "--session", "--check-update", "--no-update-check"]) assert.ok(stdout.includes(option), option);
 	assert.match(stdout, /Interactive computer scans also check for a newer CLI on npm/);
 	for (const gone of ["--share", "--contribute", "encrypt", "private"]) assert.ok(!stdout.includes(gone), gone);
 	assert.match(stdout, /Nothing else is sent\s+unless you use --lookup\./);
@@ -435,6 +435,92 @@ test("--jsonl and --sarif say so when they can't do what was asked", async () =>
 		assert.match(stderr, message, args.join(" "));
 	}
 	assert.deepEqual((await run(["--json", "--jsonl"])).stdout, "", "no check ran");
+});
+
+// --- Your own rules -------------------------------------------------------------------
+
+const EXAMPLE_RULES = fileURLToPath(new URL("../examples/rules/company.json", import.meta.url));
+
+test("--rules checks with a company's own rules too, in every kind of output", async () => {
+	const dir = await scratchProject({
+		"CLAUDE.md": "# Notes\nRun the tests.\n",
+		".claude/settings.json": JSON.stringify({ permissions: { allow: ["Bash(npm test:*)", "Bash(./scripts/deploy.sh:*)"] } }, null, 2),
+	});
+	const stub = await siteStub();
+	const out = await mkdtemp(path.join(home, "rules-"));
+	try {
+		// The report, with the example's two rules: one for the project, one for the settings on this computer.
+		const { code, stdout } = await run(["--rules", EXAMPLE_RULES, dir], { env: stub.online });
+		assert.equal(code, 0, stdout);
+		assert.match(stdout, /2 rules of\s+your\s+own\s+were\s+checked\s+too\./);
+		assert.match(stdout, /A project lets Claude Code run the deploy script without asking\n\s+\.claude\/settings\.json:5  ACME-DEPLOY-APPROVED\n/);
+		assert.match(stdout, /Claude Code doesn't use the company gateway\n\s+~\/\.claude\/settings\.json  ACME-GATEWAY\n/);
+		assert.deepEqual(stub.requests.map((r) => `${r.method} ${r.url}`), ["GET /api/known"], "the rules and what they find stay on this computer");
+
+		const full = JSON.parse((await run(["--rules", EXAMPLE_RULES, "--json", dir])).stdout);
+		const plain = JSON.parse((await run(["--json", dir])).stdout);
+		assert.deepEqual(full.customRules, ["ACME-GATEWAY", "ACME-DEPLOY-APPROVED"]);
+		assert.ok(!("customRules" in plain));
+		const mine = full.findings.filter((f) => f.custom);
+		assert.deepEqual(mine.map((f) => f.id).sort(), ["ACME-DEPLOY-APPROVED", "ACME-GATEWAY"]);
+		// They add to what the built-in rules find and change none of it. Two high rules take 15 points each.
+		assert.deepEqual(full.findings.filter((f) => !f.custom).map((f) => [f.id, f.file, f.line]), plain.findings.map((f) => [f.id, f.file, f.line]));
+		assert.equal(full.score, Math.max(0, plain.score - 30));
+
+		const records = (await run(["--rules", EXAMPLE_RULES, "--jsonl", dir])).stdout.trimEnd().split("\n").map((line) => JSON.parse(line));
+		assert.equal(records.find((r) => r.rule === "ACME-GATEWAY").ruleUrl, "https://wiki.acme.example/ai-agents#gateway");
+		assert.equal(records.find((r) => r.rule === "ACME-DEPLOY-APPROVED").ruleUrl, null);
+		assert.equal(records.find((r) => !r.rule.startsWith("ACME-")).ruleUrl.startsWith("https://misconfig.ai/rules#"), true);
+
+		// In CI: the project alone, failing on a rule of the company's.
+		const file = path.join(out, "misconfig.sarif");
+		assert.equal((await run(["--project-only", "--fail-on", "high", dir])).code, 0);
+		assert.equal((await run(["--project-only", "--fail-on", "high", "--rules", EXAMPLE_RULES, "--sarif", file, dir])).code, 1);
+		const [sarif] = JSON.parse(await readFile(file, "utf8")).runs;
+		assert.deepEqual(sarif.results.map((r) => r.ruleId), ["ACME-DEPLOY-APPROVED"]);
+		const [descriptor] = sarif.tool.driver.rules;
+		assert.deepEqual([descriptor.id, descriptor.shortDescription.text, descriptor.properties["security-severity"]], ["ACME-DEPLOY-APPROVED", "A project lets Claude Code run the deploy script without asking", "8.0"]);
+		assert.ok(!("helpUri" in descriptor), "a rule with no reference links nowhere");
+	} finally {
+		await stub.close();
+		await rm(dir, { recursive: true, force: true });
+		await rm(out, { recursive: true, force: true });
+	}
+});
+
+test("rules come only from --rules, and a file that can't be used stops the command", async () => {
+	const rules = await mkdtemp(path.join(home, "rules-"));
+	const broken = path.join(rules, "broken.json");
+	const hostile = path.join(rules, "hostile.json");
+	await writeFile(broken, '{ "rules": [');
+	await writeFile(hostile, JSON.stringify([{ id: "ACME-X", "##vso[task.setvariable variable=PATH]/tmp": 1 }]));
+	// A project with a rules file of its own, which nothing asked for.
+	const own = JSON.stringify({ rules: [{ id: "PWN-EVERYTHING", name: "x", severity: "info", category: "workspace", why: "x", fix: "x", files: ["**/*"], match: [{ path: "nowhere", exists: false }] }] });
+	const dir = await scratchProject({ "CLAUDE.md": "# Notes\nRun the tests.\n", ".mcp.json": "{}", "misconfig.json": own, "rules.json": own, ".misconfig/rules.json": own });
+	try {
+		const quiet = JSON.parse((await run(["--json", "--project-only", dir])).stdout);
+		assert.ok(!("customRules" in quiet) && !quiet.findings.some((f) => f.custom || f.id === "PWN-EVERYTHING"));
+
+		for (const [args, message] of [
+			[["--rules"], /--rules needs a file of your own rules, such as rules\.json\./],
+			[["--rules", "--json"], /--rules needs a file of your own rules/],
+			[["--rules", broken], /The rules file .+broken\.json isn't valid JSON\./],
+			[["--rules", EXAMPLE_RULES, "--rules", broken, "--json"], /The rules file .+broken\.json isn't valid JSON\./],
+			[["--rules", path.join(rules, "missing.json")], /couldn't be read: there's no file there\./],
+			[["--rules", EXAMPLE_RULES, "--rules", EXAMPLE_RULES], /rule 1: ACME-GATEWAY is already a rule in /],
+			[["--rules", hostile], /hostile\.json, rule 1: ACME-X: One of its keys isn't a key a rule can have\./],
+			[["--history", "--rules", EXAMPLE_RULES], /as a separate command/],
+			[["--demo", "--rules", EXAMPLE_RULES], /Use --demo to review the sample computer/],
+		]) {
+			const { code, stdout, stderr } = await run(args);
+			assert.deepEqual([code, stdout], [2, ""], `${args.join(" ")} checked something`);
+			assert.match(stderr, message, args.join(" "));
+			assert.ok(!stderr.includes("##vso"), "a rules file wrote to the log in its own words");
+		}
+	} finally {
+		await rm(rules, { recursive: true, force: true });
+		await rm(dir, { recursive: true, force: true });
+	}
 });
 
 // --- Files on disk ------------------------------------------------------------------

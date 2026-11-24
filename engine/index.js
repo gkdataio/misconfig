@@ -6,6 +6,7 @@ import { maskSecrets, looksLikeSecret, looksLikeToken, isMasked, isPathLike, des
 import { parseJSONC, parseTOML, parseYAML, parseCodexRules } from "./parse.js";
 import { namedInstructions, NAMING_SETTINGS } from "./named.js";
 import { RULES, CATEGORIES } from "./catalog.js";
+import { TEMPLATES, holds, readers } from "./templates.js";
 import { explainFile, agentLines, hiddenComments, hiddenTags, hiddenZeroWidth, fenceAt, inCodeSpan, CAN_IMPORT, scopeOf, HOOK_EVENTS, anthropicMarketplace, marketplaceSource } from "./explain.js";
 import { ignoreRules, isIgnored, globMatch } from "./glob.js";
 import { HOME_MARKERS, DOWNLOADS_LIKE, TOOL_ROOT, visibleName } from "./paths.js";
@@ -373,7 +374,9 @@ const SHELL_SERVER = /(?:^|[-_/@.])(?:shell|terminal|exec|executor|commands?|cmd
 
 // --- Entry point -------------------------------------------------------------
 
-export function analyze(input) {
+// `rules` are a company's own, from readTemplate in templates.js. They can
+// only add findings.
+export function analyze(input, { rules = [] } = {}) {
 	const ctx = buildContext(input ?? {});
 	// A file that trips up a check is reported as unchecked. It can't stop
 	// the rest of the report.
@@ -386,6 +389,9 @@ export function analyze(input) {
 	};
 	for (const f of ctx.files) if (f.content) guard(f, () => collectMcpServers(ctx, f));
 	for (const f of ctx.files) if (f.content) guard(f, () => checkFile(ctx, f));
+	// After the built-in checks of every file, so a rule that trips on a file
+	// can't cost one of their findings.
+	if (rules.length) for (const f of ctx.files) if (f.content) guard(f, () => checkTemplates(ctx, f, rules));
 	for (const f of ctx.files) {
 		if (f.content && f.kind && (f.failed || (/\.(jsonc?|toml)$/i.test(f.path) && parsed(f) == null))) add(ctx, "WS-UNPARSED", { file: f });
 	}
@@ -441,13 +447,11 @@ function checkFile(ctx, f) {
 	else if (/(^|\/)\.?amazonq\/cli-agents\//i.test(p)) checkAgentFile(ctx, f, "An Amazon Q hook");
 	else if (/(^|\/)\.grok\/hooks\//i.test(p)) checkJsonHooks(ctx, f, "A Grok hook");
 	else if (/(^|\/)\.cursor\/(cli-config|cli)\.json$/i.test(p)) checkCursorCli(ctx, f);
-	else if (/(^|\/)\.cursor\/sandbox\.json$/i.test(p)) checkCursorSandbox(ctx, f);
+	// Cursor's sandbox file and the settings of Zed, Cline and Amp: their rules are templates.
+	else if (readers(TEMPLATES, p).length) checkTemplates(ctx, f, TEMPLATES);
 	else if (/(^|\/)(\.vscode|(Code|Code - Insiders|VSCodium|Cursor|Windsurf)\/User)\/settings\.json$/i.test(p)) checkVSCode(ctx, f);
 	else if (/(^|\/)opencode\.jsonc?$/i.test(p)) checkOpenCode(ctx, f);
-	else if (/(^|\/)(\.zed|zed|Zed)\/settings\.json$/i.test(p)) checkZed(ctx, f);
-	else if (/(^|\/)\.cline\/data\/globalState\.json$/i.test(p)) checkCline(ctx, f);
 	else if (/(^|\/)\.grok\/config\.toml$/i.test(p)) checkGrok(ctx, f);
-	else if (/(^|\/)(\.amp|\.config\/amp)\/settings\.json$/i.test(p)) checkAmp(ctx, f);
 	else if (/(^|\/)goose\/config\.ya?ml$/i.test(p)) checkGoose(ctx, f);
 	else if (/(^|\/)\.continue\/(?:.+\/)?[^/]+\.(?:ya?ml|json)$/i.test(p)) checkContinue(ctx, f);
 	else if (f.kind === "Shell profile") checkShellProfile(ctx, f);
@@ -694,6 +698,18 @@ function evidenceLine(file, line) {
 	return line && file.lines ? clip(file.lines[line - 1] ?? "") : undefined;
 }
 
+// Rules written as data, from templates.js: for each one that reads this
+// file and applies where the file is, a finding when its match holds.
+function checkTemplates(ctx, f, templates) {
+	for (const t of readers(templates, f.path)) {
+		if (t.scope && (t.scope === "project") !== inProject(ctx, f)) continue;
+		const data = parsed(f);
+		if (data === null || typeof data !== "object" || !holds(t.match, data)) continue;
+		const line = t.line ? lineOf(f, t.line) : 0;
+		add(ctx, t.id, { file: f, line, evidence: evidenceLine(f, line), rule: t.rule });
+	}
+}
+
 function add(ctx, id, opts = {}) {
 	const { file, line = 0, vars = {} } = opts;
 	const key = [id, file?.path ?? null, line, ...["server", "key", "rule", "place", "ext", "pkg", "known", "name", "skill", "campaign", "path"].map((k) => vars[k] ?? "")].join("|");
@@ -702,12 +718,14 @@ function add(ctx, id, opts = {}) {
 	ctx.findings.push(makeFinding(id, opts));
 }
 
-function makeFinding(id, { file, line = 0, evidence, vars = {}, tool } = {}) {
-	const rule = RULES[id];
+// `own` is the wording of a company's own rule, which isn't in the catalog.
+function makeFinding(id, { file, line = 0, evidence, vars = {}, tool, rule: own } = {}) {
+	const rule = own ?? RULES[id];
 	if (!rule) throw new Error(`Unknown rule ${id}`);
 	const filePath = file?.path ?? null;
 	const values = Object.fromEntries(Object.entries({ file: filePath ?? "", ...vars }).map(([k, v]) => [k, String(v ?? "")]));
-	const fill = (text) => fillTemplate(text, values);
+	// A company's rule can quote {file}. Other braces in it are its own words.
+	const fill = own ? (text) => text.replaceAll("{file}", () => values.file) : (text) => fillTemplate(text, values);
 	return {
 		id,
 		severity: rule.severity,
@@ -720,6 +738,8 @@ function makeFinding(id, { file, line = 0, evidence, vars = {}, tool } = {}) {
 		line: line || null,
 		evidence: evidence ? describeMasks(clip(evidence, 220)) : null,
 		vars: values,
+		// Set for a company's own rule: what it's called and where it's explained.
+		...(own ? { custom: { name: own.name, reference: own.reference } } : {}),
 	};
 }
 
@@ -1090,7 +1110,7 @@ function checkShellProfile(ctx, f) {
 	}
 }
 
-// --- Gemini, VS Code, OpenCode, Zed, Aider -----------------------------------
+// --- Gemini, VS Code, OpenCode, Aider ----------------------------------------
 
 function checkGemini(ctx, f) {
 	const json = parsed(f);
@@ -1192,19 +1212,6 @@ function checkOpenCode(ctx, f) {
 				add(ctx, "OC-BASH-ALLOW", { file: f, line: lineOf(f, `"${name}"`), vars: { where: ` for the “${name}” agent`, rule: name } });
 			}
 		}
-	}
-}
-
-function checkZed(ctx, f) {
-	const json = parsed(f);
-	if (!isObj(json)) return;
-	if (json.agent?.always_allow_tool_actions === true || json.assistant?.always_allow_tool_actions === true || json.agent?.tool_permissions?.default === "allow") {
-		const line = lineOf(f, /always_allow_tool_actions|"default"\s*:\s*"allow"/);
-		add(ctx, "ZED-ALWAYS-ALLOW", { file: f, line, evidence: evidenceLine(f, line) });
-	}
-	if (json.session?.trust_all_worktrees === true) {
-		const line = lineOf(f, /trust_all_worktrees/);
-		add(ctx, "ZED-TRUST-ALL", { file: f, line, evidence: evidenceLine(f, line) });
 	}
 }
 
@@ -1392,26 +1399,6 @@ function checkCursorCli(ctx, f) {
 	}
 }
 
-function checkCursorSandbox(ctx, f) {
-	if (parsed(f)?.type === "insecure_none") {
-		const line = lineOf(f, /insecure_none/);
-		add(ctx, "CU-NO-SANDBOX", { file: f, line, evidence: evidenceLine(f, line) });
-	}
-}
-
-// Cline keeps its approval settings in ~/.cline/data/globalState.json.
-function checkCline(ctx, f) {
-	const json = parsed(f);
-	if (!isObj(json)) return;
-	if (json.yoloModeToggled === true) {
-		const line = lineOf(f, /yoloModeToggled/);
-		add(ctx, "CL-YOLO", { file: f, line, evidence: evidenceLine(f, line) });
-	} else if (json.autoApprovalSettings?.enabled !== false && json.autoApprovalSettings?.actions?.executeAllCommands === true) {
-		const line = lineOf(f, /executeAllCommands/);
-		add(ctx, "CL-AUTO-COMMANDS", { file: f, line, evidence: evidenceLine(f, line) });
-	}
-}
-
 function checkGrok(ctx, f) {
 	const toml = parsed(f);
 	for (const command of commandsIn(toml?.ui?.status_line?.command)) checkCommand(ctx, command, f, "Grok's status line command");
@@ -1419,13 +1406,6 @@ function checkGrok(ctx, f) {
 	if (mode === "always-approve" || mode === "yolo") {
 		const line = lineOf(f, /permission_mode/);
 		add(ctx, "GROK-ALWAYS-APPROVE", { file: f, line, evidence: evidenceLine(f, line), vars: { mode } });
-	}
-}
-
-function checkAmp(ctx, f) {
-	if (parsed(f)?.["amp.dangerouslyAllowAll"] === true) {
-		const line = lineOf(f, /dangerouslyAllowAll/);
-		add(ctx, "AMP-ALLOW-ALL", { file: f, line, evidence: evidenceLine(f, line) });
 	}
 }
 
@@ -2673,15 +2653,19 @@ export function applyLookup(result, hits) {
 const bySeverity = (a, b) =>
 	SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) || a.category.localeCompare(b.category) || (a.file ?? "").localeCompare(b.file ?? "");
 
+// The level of a finding's rule. A company's own rule isn't in the catalog,
+// so its finding says. Null for a finding that names no rule there is.
+const levelOf = (f) => (Object.hasOwn(RULES, f.id) ? RULES[f.id].severity : f.custom && Object.hasOwn(WEIGHT, f.severity) ? f.severity : null);
+
 // Score, grade and counts from a list of findings, for a check and again
 // after a lookup.
 function scoreFindings(findings, hasControlFiles) {
 	const counts = Object.fromEntries(SEVERITIES.map((s) => [s, findings.filter((f) => f.severity === s).length]));
 	// Repeats of the same rule count less, so one noisy pattern can't zero the score.
 	const byRule = new Map();
-	for (const f of findings) byRule.set(f.id, (byRule.get(f.id) ?? 0) + 1);
+	for (const f of findings) byRule.set(f.id, { severity: levelOf(f), n: (byRule.get(f.id)?.n ?? 0) + 1 });
 	let penalty = 0;
-	for (const [id, n] of byRule) penalty += WEIGHT[RULES[id].severity] * Math.min(2, 1 + 0.25 * (n - 1));
+	for (const { severity, n } of byRule.values()) penalty += WEIGHT[severity] * Math.min(2, 1 + 0.25 * (n - 1));
 	const score = Math.max(0, Math.min(100, Math.round(100 - penalty)));
 	let grade = GRADES.find(([, min]) => score >= min)?.[0] ?? "F";
 	if (counts.critical && "ABC".includes(grade)) grade = "D";
@@ -2694,8 +2678,9 @@ function scoreFindings(findings, hasControlFiles) {
 export function pointsOff(findings) {
 	const byRule = new Map();
 	for (const f of findings) {
-		if (!Object.hasOwn(RULES, f.id)) continue;
-		const entry = byRule.get(f.id) ?? { id: f.id, severity: RULES[f.id].severity, findings: [] };
+		const severity = levelOf(f);
+		if (!severity) continue;
+		const entry = byRule.get(f.id) ?? { id: f.id, severity, findings: [] };
 		entry.findings.push(f);
 		byRule.set(f.id, entry);
 	}

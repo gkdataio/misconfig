@@ -1373,6 +1373,12 @@ p {
 	color: var(--signal);
 	text-decoration-color: currentColor;
 }
+/* One of your own rules with nowhere to link to. */
+span.f-rule,
+span.f-rule:hover {
+	color: var(--text-3);
+	text-decoration: none;
+}
 
 /* What to fix first: one line per rule, most points first. */
 .fix-first {

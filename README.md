@@ -30,6 +30,8 @@ npx @misconfig/cli@1.5.0 --sarif misconfig.sarif
 
 On GitHub, the new action runs the check from this repository at the commit or tag your workflow names, without fetching anything from npm, and saves the SARIF file for code scanning. [In CI](https://github.com/gkdataio/misconfig#in-ci) has the workflow.
 
+`--rules FILE` adds rules of your own to the check, for what your team's policy says about agent settings. [Your own rules](https://github.com/gkdataio/misconfig#your-own-rules) shows one.
+
 ## Computer review
 
 The demo requires CLI 1.4 or newer and Node.js 18 or later. Try it on a sample profile. On Windows, use `npx.cmd` if PowerShell blocks `npx`.
@@ -123,6 +125,7 @@ npx @misconfig/cli --lookup     # also ask OSV.dev about what's installed
 | `--json` | Prints the full result as JSON |
 | `--jsonl` | Prints the findings as JSON Lines, one finding on each line |
 | `--sarif FILE` | Also saves the findings in `FILE` as SARIF 2.1.0, for GitHub code scanning and other SARIF viewers |
+| `--rules FILE` | Also checks with your own rules from `FILE`. Repeat it for more files |
 | `--yes` | Runs `--lookup` without asking, for scripts |
 | `--help` / `--version` | Print the supported options or installed version |
 
@@ -144,11 +147,40 @@ Each line is one finding:
 | `title`, `why`, `fix` | The finding, in the report's words |
 | `file`, `line` | Where it is. A file in the checked folder is named from that folder, one in your home folder starts with `~/`, and any other has its full path. `null` when a finding isn't about one file or one line |
 | `evidence` | The line the finding points at, with secrets masked, or `null` |
-| `ruleUrl` | The rule at [misconfig.ai/rules](https://misconfig.ai/rules) |
+| `ruleUrl` | The rule at [misconfig.ai/rules](https://misconfig.ai/rules). For one of your own rules, its `reference`, or `null` without one |
 | `checkedAt` | When the check ran, in UTC |
 | `ruleset`, `cli` | The versions of the rules and of the CLI that made the line |
 
 A 1.x release can add a key and won't rename or remove one. Every key is always there. Marks that reorder text, and characters that some programs treat as line breaks, are written as `\u` escapes, so a checked file can't add a line or change how one reads on screen. A check that finds nothing prints nothing, and the exit code is the same as without `--jsonl`.
+
+### Your own rules
+
+A team can add rules for its own policy. `--rules FILE` reads them from a JSON file and checks with them as well as the built-in ones.
+
+```sh
+npx @misconfig/cli --rules company-rules.json
+```
+
+```json
+{
+  "rules": [
+    {
+      "id": "ACME-GATEWAY",
+      "name": "Claude Code doesn't use the company gateway",
+      "severity": "high",
+      "category": "permissions",
+      "why": "env.ANTHROPIC_BASE_URL in {file} isn't the company gateway, so prompts and code leave without its logging and data controls.",
+      "fix": "Set env.ANTHROPIC_BASE_URL to https://llm-gateway.acme.example in {file}.",
+      "files": ["~/.claude/settings.json"],
+      "match": [{ "not": { "path": "env.ANTHROPIC_BASE_URL", "equals": "https://llm-gateway.acme.example" } }]
+    }
+  ]
+}
+```
+
+A rule names the settings files it reads and what in them makes a finding. Its findings are in the report, `--json`, `--jsonl` and SARIF like any other. They take points off the score, and `--fail-on` counts them. [The rules format](https://github.com/gkdataio/misconfig/blob/main/docs/rules.md) explains every key, and [`examples/rules/company.json`](https://github.com/gkdataio/misconfig/blob/main/examples/rules/company.json) is a file to start from.
+
+A rule can only add a finding. It can't run anything, read a file misconfig doesn't already read, or hide what a built-in rule finds. Rules are read only from the files you name, never from the checked project. In CI, keep the rules file where a pull request can't change it. The format is new in 1.5 and may change before it settles.
 
 ### In CI
 
@@ -194,6 +226,7 @@ A name in a checked file can't give the CI system a command through the log. Whe
 - The malware-list request to misconfig.ai carries the CLI version and operating system family. Interactive computer scans also check the public package version on npm. `--offline` skips both requests, and `DO_NOT_TRACK=1` keeps the malware-list request from being counted.
 - `--lookup` sends package names and versions to OSV.dev after the prompt, or with the CLI's `--yes`. The `npx` launcher may contact npm to fetch the CLI before its own offline mode starts. An installed copy or the extracted demo works without that download.
 - `--jsonl` and `--sarif` upload nothing. Both hold what the report shows for each finding: the file, the finding's own words and, in JSON Lines, the masked line it points at. SARIF names a file in your home folder from `HOME`, not by its full path. Read either before you share it.
+- `--rules` reads your rules on this computer. Nothing in them is sent anywhere, and neither is what they find.
 - Credential files such as `.env` and `id_rsa`, and programs inside skills, are listed by name only and never opened. Secrets inside agent files are masked as they're read.
 
 The [privacy policy](https://misconfig.ai/privacy) lists everything misconfig.ai receives and how long it's kept.
@@ -212,11 +245,13 @@ misconfig is plain JavaScript with no dependencies, so what you install is what'
 | --- | --- |
 | [`engine/catalog.js`](https://github.com/gkdataio/misconfig/blob/main/engine/catalog.js) | The wording, level and fix of every rule |
 | [`engine/index.js`](https://github.com/gkdataio/misconfig/blob/main/engine/index.js) | The checks that apply the rules, and the scoring |
+| [`engine/templates.js`](https://github.com/gkdataio/misconfig/blob/main/engine/templates.js) | Rules written as data, and what a rule of your own can say |
 | [`engine/known.js`](https://github.com/gkdataio/misconfig/blob/main/engine/known.js) | Known malware, agent advisories and attack traces, each with its source |
 | [`engine/locations.js`](https://github.com/gkdataio/misconfig/blob/main/engine/locations.js) | Where each agent keeps its files on macOS, Windows and Linux |
 | [`lib/discover.js`](https://github.com/gkdataio/misconfig/blob/main/lib/discover.js) | Which files the command reads, and the limits on what it reads |
 | [`lib/html.js`](https://github.com/gkdataio/misconfig/blob/main/lib/html.js) | The page `--open` saves |
 | [`lib/formats.js`](https://github.com/gkdataio/misconfig/blob/main/lib/formats.js) | Findings as JSON Lines and as SARIF |
+| [`lib/rule-files.js`](https://github.com/gkdataio/misconfig/blob/main/lib/rule-files.js) | How `--rules` reads your rules |
 | [`lib/computer-review.js`](https://github.com/gkdataio/misconfig/blob/main/lib/computer-review.js) | Changes, approvals and accepted risks |
 | [`lib/edit-attribution.js`](https://github.com/gkdataio/misconfig/blob/main/lib/edit-attribution.js) | How optional local edit records are matched |
 | [`action/main.js`](https://github.com/gkdataio/misconfig/blob/main/action/main.js) | The GitHub Action |
