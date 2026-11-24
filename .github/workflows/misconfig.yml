@@ -4,7 +4,8 @@ on:
   pull_request:
   merge_group:
   push:
-    branches: [main]
+    # A release branch is checked before it's merged.
+    branches: [main, 'release-*']
   workflow_dispatch:
 
 permissions:
