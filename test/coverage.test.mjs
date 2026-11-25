@@ -11,6 +11,8 @@ import path from "node:path";
 import { analyze } from "../engine/index.js";
 import { decodeText } from "../engine/decode.js";
 import { discover } from "../lib/discover.js";
+import { LOCATIONS, userPaths } from "../engine/locations.js";
+import { classifyPath } from "../engine/paths.js";
 
 const J = (value) => JSON.stringify(value, null, 2);
 const check = (files) => analyze({ root: "app", files });
@@ -274,4 +276,25 @@ test("the YAML reader keeps to plain data and can't be made to misbehave", async
 	parseYAML("- ".repeat(50_000) + "x");
 	parseYAML("a: " + "[".repeat(5000) + "]".repeat(5000));
 	assert.ok(performance.now() - started < 2000, "took too long");
+});
+
+test("every file the command reads is recognized where each system keeps it", () => {
+	const missed = [];
+	for (const os of ["mac", "windows", "linux"]) {
+		// Shell startup files are read for aliases, not listed as agent files.
+		for (const entry of LOCATIONS.filter((l) => l.agent !== "Your shell")) {
+			for (const where of userPaths(entry, os)) {
+				// A folder of agent files: a file in it of the kind kept there.
+				// "*" is any one name.
+				const inside = /settings\.d\/$|cli-agents\/$/.test(where) ? "x.json" : /plugins\/$/.test(where) ? "x.js" : /hooks\/$/.test(where) && /\.kiro\//.test(where) ? "x.kiro.hook" : "x.md";
+				const file = (where.endsWith("/") ? where + inside : where).replace(/\*/g, "any");
+				// The command reads every file listed, and the files in a folder
+				// that it knows are agent files; the checks know what each is.
+				if (where.endsWith("/") && !classifyPath(file)) missed.push(`${os}: ${file} isn't read`);
+				const result = check([{ path: file, content: file.endsWith(".md") ? "# Notes\n" : "{}\n" }]);
+				if (!result.controlMap.some((f) => f.path === file)) missed.push(`${os}: ${file} isn't recognized`);
+			}
+		}
+	}
+	assert.deepEqual(missed, []);
 });

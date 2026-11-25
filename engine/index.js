@@ -1,8 +1,7 @@
-// The misconfig rule engine. It runs in the command, on the user's computer.
-// The Worker uses its rules version, scoring text and catalog for the rules
-// page, and the site publishes it so anyone can read it.
+// The misconfig rule engine. It runs in the command, on the user's computer,
+// and misconfig.ai builds its rules page from the same catalog.
 
-import { maskSecrets, looksLikeSecret, looksLikeToken, isMasked, isPathLike, describeMasks } from "./mask.js";
+import { maskSecrets, maskValues, looksLikeSecret, looksLikeToken, isMasked, isPathLike, describeMasks } from "./mask.js";
 import { parseJSONC, parseTOML, parseYAML, parseCodexRules } from "./parse.js";
 import { namedInstructions, NAMING_SETTINGS } from "./named.js";
 import { RULES, CATEGORIES } from "./catalog.js";
@@ -31,7 +30,7 @@ import {
 
 export { findDangerFlag };
 
-export const RULESET_VERSION = "2026.11.7";
+export const RULESET_VERSION = "2026.11.25";
 
 const WEIGHT = { critical: 30, high: 15, medium: 6, low: 2, info: 0 };
 const SEVERITIES = ["critical", "high", "medium", "low", "info"];
@@ -75,7 +74,7 @@ const CONTROL = [
 	[/(^|\/)claude_desktop_config\.json$/i, ["Claude Desktop"], "MCP servers"],
 	// Codex
 	[/(^|\/)\.codex\/agents(\.override)?\.md$/i, ["Codex"], "Instructions"],
-	[/(^|\/)\.codex\/config\.toml$/i, ["Codex"], "Permissions & MCP"],
+	[/((^|\/)\.codex|^\/etc\/codex)\/config\.toml$/i, ["Codex"], "Permissions & MCP"],
 	[/(^|\/)\.codex\/hooks\.json$/i, ["Codex"], "Hooks"],
 	[/(^|\/)\.codex\/rules\/[^/]+\.rules$/i, ["Codex"], "Command rules"],
 	[/(^|\/)\.codex\/[^/]+\.config\.toml$/i, ["Codex"], "Profile"],
@@ -133,7 +132,7 @@ const CONTROL = [
 	[/(^|\/)(\.windsurf|\.codeium\/windsurf)\/hooks\.json$/i, ["Windsurf"], "Hooks"],
 	[/(^|\/)\.devin\/hooks\.v1\.json$/i, ["Windsurf"], "Hooks"],
 	[/(^|\/)opencode\.jsonc?$/i, ["OpenCode"], "Settings & MCP"],
-	[/(^|\/)\.opencode\/(plugins?|tools)\/[^/]+\.[cm]?[jt]sx?$/i, ["OpenCode"], "Plugin code"],
+	[/(^|\/)(\.opencode|\.config\/opencode)\/(plugins?|tools)\/[^/]+\.[cm]?[jt]sx?$/i, ["OpenCode"], "Plugin code"],
 	[/(^|\/)\.opencode\//i, ["OpenCode"], "Agents & commands"],
 	[/(^|\/)\.grok\/config\.toml$/i, ["Grok"], "Permissions & MCP"],
 	[/(^|\/)\.grok\/settings\.json$/i, ["Grok"], "Settings & MCP"],
@@ -141,7 +140,7 @@ const CONTROL = [
 	[/(^|\/)(\.grok\/.+|grok)\.md$/i, ["Grok"], "Instructions"],
 	[/(^|\/)(\.amp|\.config\/amp)\/settings\.json$/i, ["Amp"], "Settings & MCP"],
 	[/(^|\/)(\.amp|\.config\/amp)\/plugins\/[^/]+\.[cm]?[jt]sx?$/i, ["Amp"], "Plugin code"],
-	[/(^|\/)goose\/config\.ya?ml$/i, ["Goose"], "Settings & extensions"],
+	[/(^|\/)goose\/(config\/)?config\.ya?ml$/i, ["Goose"], "Settings & extensions"],
 	[/(^|\/)\.goosehints$/i, ["Goose"], "Instructions"],
 	[/(^|\/)\.kiro\/steering\//i, ["Kiro"], "Steering"],
 	[/(^|\/)\.kiro\/settings\/mcp\.json$/i, ["Kiro"], "MCP servers"],
@@ -190,8 +189,42 @@ const isCertificate = (path) => {
 // These run on untrusted text, so every repeat is bounded or can't overlap
 // the next part of its pattern, and matching time grows with the text.
 
-const RX_REMOTE_EXEC =
-	/\b(?:curl|wget)\b[^\n|;&]{0,300}\|\s*(?:sudo(?:\s+-[A-Za-z]+)*\s+)?(?:(?:ba|z|da|k|fi)?sh|python[0-9.]*|node|perl|ruby)\b|\b(?:(?:ba|z|da|k)?sh\s+-c|eval)\s+["']?\$\(\s*(?:curl|wget)\b|\bsource\s+<\(\s*(?:curl|wget)\b|\b(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\b[^\n|]{0,300}\|\s*(?:iex|Invoke-Expression)\b|\b(?:iex|Invoke-Expression)\b[^\n]{0,20}(?:Net\.WebClient|DownloadString|iwr|irm|Invoke-WebRequest|Invoke-RestMethod)|\bbase64\s+(?:-d|--decode)\b[^\n|]{0,120}\|\s*(?:ba)?sh\b|\b(?:bash|sh|zsh)\s+<\(\s*(?:curl|wget)\b|\bpowershell(?:\.exe)?\b[^\n]{0,60}\s-(?:e|enc|encodedcommand)\s+[A-Za-z0-9+/=]{20,}|\b(?:python[0-9.]*|node|perl|ruby|php)\s+-[ce]\s+["']?(?:\$\(|`)\s*(?:curl|wget)\b|\b(?:curl|wget)\b[^\n|;&]{0,300}?\s(?:-[A-Za-z]{0,8}[oO]|--output|--output-document)[= ]?\s*["']?([\w./~][\w./~-]{0,99})["']?[^\n]{0,120}?(?:&&|;)\s*(?:sudo\s+)?(?:(?:(?:ba|z|da|k)?sh|python[0-9.]*|node|perl|ruby|source|\.|chmod\s+\+?[0-7]*x?)\s+)?["']?(?:\.\/)?\1(?![\w./-])|\b(?:curl|wget)\b[^\n|;&]{0,300}?https?:\/\/[^\s"'|;&]{0,200}\/([\w.-]{1,100})["']?[^\n]{0,120}?(?:&&|;)\s*(?:sudo\s+)?(?:(?:ba|z|da|k)?sh|python[0-9.]*|node|perl|ruby|source|\.|chmod\s+\+?[0-7]*x?)\s+["']?(?:\.\/)?\2(?![\w./-])|\bdeno\s+run\b[^\n|;&]{0,120}?\shttps?:\/\/|\b(?:npx|bunx|pnpx)\b(?:\s+-{1,2}[\w-]+)*\s+https?:\/\//i;
+// A download piped into something that runs it, straight or through other
+// commands: `curl … | sh`, `curl … | tee log | sudo -E bash -`,
+// `wget -qO- … | DIR=/opt sh`. A shell runs whatever it's given. Python,
+// Node, Perl and Ruby started with code of their own (-c, -e, -p) only read
+// the download, as in
+// `curl … | python3 -c "import json,sys; print(json.load(sys.stdin)['version'])"`,
+// unless that code runs what it reads.
+//
+// One piece of a command: a quoted string, or a character that doesn't end
+// the command. A quote with no partner is an apostrophe.
+const PIECE = String.raw`(?:[^\n|;&"']|"[^"\n]{0,200}"|'[^'\n]{0,200}'|"(?![^"\n]{0,200}")|'(?![^'\n]{0,200}')|&(?=[\w%]))`;
+const DOWNLOAD_PIPED_INTO = String.raw`\b(?:curl|wget)\b(?=\s+[^\s|;&])${PIECE}{0,200}(?:\|&?(?!\|)${PIECE}{0,120}){0,3}?\|&?\s*`;
+// What can stand before the program's name: sudo, env, variables, its folder.
+const LAUNCHED = String.raw`(?:sudo(?:\s+-[A-Za-z]+)*\s+)?(?:(?:\/usr\/bin\/)?env\s+(?:-[A-Za-z]+\s+)*)?(?:[A-Za-z_]\w*=(?:"[^"\n]{0,100}"|'[^'\n]{0,100}'|[^\s"']\S*)?\s+){0,6}(?:\/(?:usr\/)?(?:local\/)?bin\/)?`;
+// Calls that run text as code, in code given to Python or Node, and to Perl or Ruby.
+const RUNS_TEXT = String.raw`[^.\w](?:exec\s*\(|eval\b)|\bglobalThis\s*\.\s*eval\b|\bos\s*\.\s*(?:system|popen|exec\w*|spawn\w*)\s*\(|\b(?:subprocess|child_process|__import__)\b|\bpty\s*\.\s*spawn\b|\bnew\s+Function\b|\brunIn\w*Context\b`;
+const RUNS_TEXT_PERL_RUBY = String.raw`\b(?:exec|eval|system|popen|spawn|instance_eval|class_eval|qx|Open3)\b`;
+// A program that runs its input as code: one started without code of its own
+// (and not only to read, as `python3 -m json.tool` is), or with code that runs text.
+const runsItsInput = (program, ownCode, runsText, onlyReads = "") => {
+	const options = String.raw`(?:\s+-\S+){0,4}?\s+`;
+	return String.raw`${program}\b(?![-.\/]\w)(?:(?!${options}(?:${ownCode}\s*=?\s*["'$\w]${onlyReads}))|(?=${options}${ownCode}[^\n]{0,300}?(?:${runsText})))`;
+};
+const PIPED_INTO_CODE = [
+	String.raw`(?:ba|z|da|k|fi)?sh\b(?![-.\/]\w)`,
+	runsItsInput(String.raw`python[0-9.]*`, String.raw`-[A-Za-z]*c\b`, RUNS_TEXT, String.raw`|-m\s*json\b`),
+	runsItsInput("node", String.raw`(?:-[A-Za-z]*[ep]|--eval|--print)\b`, RUNS_TEXT),
+	runsItsInput("(?:perl|ruby)", String.raw`-[A-Za-z]*e\b`, RUNS_TEXT_PERL_RUBY),
+].join("|");
+// The other ways to download and run: a shell given a download as its code or
+// its file, PowerShell's Invoke-Expression, base64 decoded into a shell, a
+// file downloaded and then run, and inline code that fetches code and runs it.
+const RX_REMOTE_EXEC_OTHER =
+	/\b(?:(?:ba|z|da|k)?sh\s+-c|eval)\s+["']?\$\(\s*(?:curl|wget)\b|\bsource\s+<\(\s*(?:curl|wget)\b|\b(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\b[^\n|]{0,300}\|\s*(?:iex|Invoke-Expression)\b|\b(?:iex|Invoke-Expression)\b[^\n]{0,20}(?:Net\.WebClient|DownloadString|iwr|irm|Invoke-WebRequest|Invoke-RestMethod)|\bbase64\s+(?:-d|--decode)\b[^\n|]{0,120}\|\s*(?:ba)?sh\b|\b(?:bash|sh|zsh)\s+<\(\s*(?:curl|wget)\b|\bpowershell(?:\.exe)?\b[^\n]{0,60}\s-(?:e|enc|encodedcommand)\s+[A-Za-z0-9+/=]{20,}|\b(?:python[0-9.]*|node|perl|ruby|php)\s+-[ce]\s+["']?(?:\$\(|`)\s*(?:curl|wget)\b|\b(?:curl|wget)\b[^\n|;&]{0,300}?\s(?:-[A-Za-z]{0,8}[oO]|--output|--output-document)[= ]?\s*["']?([\w./~][\w./~-]{0,99})["']?[^\n]{0,120}?(?:&&|;)\s*(?:sudo\s+)?(?:(?:(?:ba|z|da|k)?sh|python[0-9.]*|node|perl|ruby|source|\.|chmod\s+\+?[0-7]*x?)\s+)?["']?(?:\.\/)?\1(?![\w./-])|\b(?:curl|wget)\b[^\n|;&]{0,300}?https?:\/\/[^\s"'|;&]{0,200}\/([\w.-]{1,100})["']?[^\n]{0,120}?(?:&&|;)\s*(?:sudo\s+)?(?:(?:ba|z|da|k)?sh|python[0-9.]*|node|perl|ruby|source|\.|chmod\s+\+?[0-7]*x?)\s+["']?(?:\.\/)?\2(?![\w./-])|\b(?:python[0-9.]*|node|deno|bun|perl|ruby|php)\s+(?:-[A-Za-z]+\s+){0,3}-[A-Za-z]*[ce]\s+["'](?=[^\n]{0,600}?(?:\b(?:exec|eval|Function|compile|system|load|execSync|spawnSync)\s*\(|\(\s*eval\s*\)))(?=[^\n]{0,600}?(?:\b(?:urlopen|urllib|requests\.get|httpx|http\.client|https?\.get|axios|LWP|Net::HTTP|open-uri|URI\.open|file_get_contents|curl_exec)\b|\bfetch\s*\())|\bdeno\s+run\b[^\n|;&]{0,120}?\shttps?:\/\/|\b(?:npx|bunx|pnpx)\b(?:\s+-{1,2}[\w-]+)*\s+https?:\/\//i;
+const RX_REMOTE_EXEC = new RegExp(`${DOWNLOAD_PIPED_INTO}${LAUNCHED}(?:${PIPED_INTO_CODE})|${RX_REMOTE_EXEC_OTHER.source}`, "i");
+
 // --- Commands ------------------------------------------------------------------
 //
 // Hooks, scripts and settings that run commands are read one command at a
@@ -214,8 +247,23 @@ const RX_CURL_SEND = /\bcurl\b[^\n]{0,200}\s(?:-[a-zA-Z]*[dFT]|--data(?:-binary|
 const RX_NET_SEND =
 	/\bwget\b[^\n]{0,200}--post-(?:data|file)\b|\b(?:Invoke-WebRequest|Invoke-RestMethod|iwr|irm)\b[^\n]{0,200}-(?:Method\s+(?:Post|Put|Patch)|Body|InFile)\b|\b(?:nc|ncat|netcat)\s+[^\n]{0,80}\b\d{2,5}\b|\bscp\s+\S+\s+\S+@|\brsync\b[^\n]{0,100}\s[\w.-]+@[\w.-]+:/i;
 
+// Code run inline that uses the network, read whole: the code's own ; and
+// && aren't the shell's. A shell's /dev/tcp and socat open connections too.
+const RX_INLINE_NET =
+	/\b(?:python[0-9.]*|node|deno|bun|perl|ruby|php)\s+(?:-[A-Za-z]+\s+){0,3}-[A-Za-z]*[ce]\s+["'][^\n]{0,600}?\b(?:requests\.(?:post|put|patch|get)|urlopen\s*\(|urllib\.request|http\.client|httpx\.(?:post|put|patch|get|request|stream|Client|AsyncClient)\b|fetch\s*\(|https?\.(?:request|get)\s*\(|XMLHttpRequest|socket\.(?:socket|connect|create_connection)|net\.connect|LWP::UserAgent|Net::HTTP|curl_exec)|\/dev\/(?:tcp|udp)\/[\w.-]+\/\d{1,5}\b|\bsocat\b[^\n]{0,100}\b(?:tcp|udp|openssl)[\w-]*:/i;
+
 // A command that sends data somewhere other than this computer.
 function sendsData(text) {
+	const inline = RX_INLINE_NET.exec(String(text));
+	if (inline) {
+		const near = String(text).slice(inline.index, inline.index + 800);
+		const hosts = [...near.matchAll(/\bhttps?:\/\/([^\s/:"'`]+)/gi)].map((m) => m[1]);
+		const tcp = /\/dev\/(?:tcp|udp)\/([\w.-]+)\//.exec(near)?.[1];
+		if (tcp) hosts.push(tcp);
+		// A socket's address, as in s.connect(("127.0.0.1", 8080)).
+		for (const m of near.matchAll(/\(\s*["']([\w.-]{1,253})["']\s*,\s*[\w${}]{1,20}\s*\)/g)) hosts.push(m[1]);
+		if (!hosts.length || !hosts.every(isLocalHost)) return true;
+	}
 	for (const command of commandsOf(text)) {
 		if (!RX_CURL_SEND.test(command) && !RX_NET_SEND.test(command)) continue;
 		const hosts = [...command.matchAll(/\bhttps?:\/\/([^\s/:"'`]+)/gi)].map((m) => m[1]);
@@ -263,11 +311,21 @@ function runsOutsideScript(text) {
 	return false;
 }
 const RX_EXFIL_HOST =
-	/(?:^|[^a-z0-9.-])((?:[a-z0-9-]{1,63}\.){0,8}(?:webhook\.site|requestbin\.(?:com|net)|pipedream\.net|ngrok(?:-free)?\.(?:app|io|dev)|interact\.sh|oast\.(?:fun|live|me|online|pro|site)|burpcollaborator\.net|canarytokens\.(?:com|org)|discord(?:app)?\.com\/api\/webhooks|hooks\.slack\.com\/services|pastebin\.com|transfer\.sh|0x0\.st|requestcatcher\.com|beeceptor\.com|hookbin\.com|ptsv[23]\.com|postb\.in))\b/i;
+	/(?:^|[^a-z0-9.-])((?:[a-z0-9-]{1,63}\.){0,8}(?:webhook\.site|requestbin\.(?:com|net)|pipedream\.net|ngrok(?:-free)?\.(?:app|io|dev)|interact\.sh|oast\.(?:fun|live|me|online|pro|site)|burpcollaborator\.net|canarytokens\.(?:com|org)|discord(?:app)?\.com\/api\/webhooks\/\d{5,}|hooks\.slack\.com\/services|pastebin\.com|transfer\.sh|0x0\.st|requestcatcher\.com|beeceptor\.com|hookbin\.com|ptsv[23]\.com|postb\.in))\b/i;
 const RX_OVERRIDE =
-	/\b(?:ignore|disregard|forget|override)\b[^.\n]{0,40}\b(?:previous|prior|above|earlier|preceding|system|safety|developer)\b[^.\n]{0,20}\b(?:instructions?|rules|prompts?|guidelines|guardrails)\b|\bdo not (?:tell|inform|alert|notify|show|mention (?:this|it) to) the user\b|\bwithout (?:telling|informing|notifying|alerting) the user\b|\bwithout the user(?:'s)? (?:knowing|knowledge|noticing|consent|permission)\b|\bnever ask (?:the user )?(?:for )?(?:permission|confirmation|approval)\b|\b(?:always|automatically|auto-)\s?(?:approve|accept|allow)\s+(?:all\s+|every\s+|any\s+)?(?:the\s+)?(?:tools?(?: (?:calls?|use|uses|requests?))?|commands?|actions?|edits?|file changes|changes|permissions?|permission (?:prompts|requests)|confirmations?|prompts|everything)\b|\b(?:disable|turn off|bypass|skip)\b[^.\n]{0,20}\b(?:sandbox|approvals?|permissions?|confirmations?|safety checks?|guardrails)\b/gi;
+	/\b(?:ignore|disregard|forget|override)\b[^.\n]{0,40}\b(?:previous|prior|above|earlier|preceding|system|safety|developer)\b[^.\n]{0,20}\b(?:instructions?|rules|prompts?|guidelines|guardrails)\b|\bdo not (?:tell|inform|alert|notify|show|mention (?:this|it) to) the user\b|\bwithout (?:telling|informing|notifying|alerting) the user\b|\bwithout the user(?:'s)? (?:knowing|knowledge|noticing|consent|permission)\b|\bnever ask (?:the user )?(?:for )?(?:permission|confirmation|approval)\b|\b(?:always|automatically|auto-)\s?(?:approve|accept|allow)\s+(?:all\s+|every\s+|any\s+)?(?:the\s+)?(?:tools?(?: (?:calls?|use|uses|requests?))?|commands?|actions?|edits?|file changes|changes|permissions?|permission (?:prompts|requests)|confirmations?|prompts|everything)\b|\b(?:disable|turn off|bypass|skip)\b[^.\n]{0,20}\b(?:sandbox|approvals?|permissions?|confirmations?|safety checks?|guardrails)\b|\b(?:run|start|use|keep|work)\b[^.\n]{0,30}\bwith(?:out)?(?:\s+the)?\s+(?:sandbox|approvals?|permission prompts?|confirmations?)\s+(?:disabled|turned off|off)\b|\bignora\b[^.\n]{0,20}\binstrucciones\s+(?:anteriores|previas)|\bignore[sz]?\b[^.\n]{0,20}\binstructions\s+(?:précédentes|precedentes|antérieures)|\bignorier(?:e|en)?\b[^.\n]{0,30}\b(?:vorherigen|bisherigen|obigen)\s+(?:Anweisungen|Regeln)|\bignore\b[^.\n]{0,20}\binstruções\s+anteriores|\bignora\b[^.\n]{0,20}\bistruzioni\s+precedenti|忽略(?:之前|以上|先前|前面)(?:的)?(?:所有)?(?:指令|说明|提示)/gi;
+// An image in a reply loads on its own, so an address that carries what the
+// agent fills in sends it out: ![](https://host/log?d={chat}) or
+// <img src="https://host/?q=SECRET_DATA">.
+const IMAGE_PLACEHOLDER = String.raw`(?:\{\{?\s*[\w.]{1,40}\s*\}?\}|\$\{?[A-Za-z_]\w{0,40}\}?|<[A-Za-z_][\w -]{0,40}>|\[[A-Za-z_][\w -]{0,40}\]|[A-Z_]{0,30}(?:DATA|SECRET|TOKEN|KEY|PASSWORD|ENV|CONTENT|CONTEXT|CHAT|CONVERSATION|HISTORY|MESSAGE|CODE|FILE|INFO|OUTPUT|SUMMARY)[A-Z_]{0,30}\b)`;
+// The pattern keeps upper and lower case apart, because a word in capitals is
+// a placeholder (SESSION_DATA) and the same word in a badge's address isn't
+// (logo=visualstudiocode).
+const RX_IMAGE_EXFIL = new RegExp(
+	String.raw`!\[[^\]\n]{0,200}\]\(\s*<?[Hh][Tt][Tt][Pp][Ss]?:\/\/([^\/\s)>?#]{1,200})[^\s)>]{0,500}?[?&][\w.-]{1,40}=${IMAGE_PLACEHOLDER}|<[Ii][Mm][Gg]\s[^>\n]{0,200}\b[Ss][Rr][Cc]\s*=\s*["'][Hh][Tt][Tt][Pp][Ss]?:\/\/([^\/\s"'?#]{1,200})[^"'\s]{0,500}?[?&][\w.-]{1,40}=${IMAGE_PLACEHOLDER}`,
+);
 const RX_SECRET_ACCESS =
-	/\b(?:cat|read|print|output|copy|send|upload|post|include|paste|exfiltrat\w*|grab|collect|dump)\b[^\n]{0,60}(?:~\/\.ssh|\bid_rsa\b|\bid_ed25519\b|\.aws\/credentials|(?:^|[\s"'`(\[/=:,])\.env\b|\.npmrc|\.git-credentials|\bauth\.json|\.credentials\.json|keychain|browser (?:cookies|passwords))/ig;
+	/\b(?:cat|read|print|output|copy|send|upload|post|include|paste|exfiltrat\w*|grab|collect|dump)\b(?:[^\n.;!?]|\.(?=\S)){0,60}(?:~\/\.ssh|\bid_rsa\b|\bid_ed25519\b|\.aws\/credentials|(?:^|[\s"'`(\[/=:,])\.env\b|\.npmrc|\.git-credentials|\bauth\.json|\.credentials\.json|keychain|browser (?:cookies|passwords))/ig;
 const RX_INJECT_WORDS =
 	/\b(?:ignore|disregard|override|secretly|silently|quietly|without (?:asking|telling)|do not (?:tell|mention|reveal|ask)|exfiltrat\w*|curl|wget|upload|send (?:it|this|the|them|all|everything)|token|api key|password|ssh|credentials?|base64|you are now|new instructions)\b/i;
 const RX_BENIGN_COMMENT = /^\s*(?:markdownlint|prettier|toc|end ?toc|eslint|cspell|vale|begin|end|lint|todo|fixme|note)\b/i;
@@ -428,7 +486,108 @@ export function analyze(input, { rules = [] } = {}) {
 	checkPluginCode(ctx);
 	checkAutorun(ctx);
 	checkNamed(ctx);
+	checkAttackPaths(ctx);
 	return summarize(ctx);
+}
+
+// --- Attack paths ----------------------------------------------------------------
+//
+// Three things together are how agents leak data: the agent takes in content
+// someone else wrote, such as a web page, an issue or an email; it can reach
+// data that isn't public; and it can send data out. Each is ordinary alone.
+// When one agent has all three and none of them asks first, a prompt
+// injection in that content can have the agent send the data out with no one
+// to stop it. Only what's documented of each MCP server is used here.
+const MCP_CAPABILITIES = [
+	[/(^|[\s/])(@modelcontextprotocol\/server-github|github-mcp-server)\b|ghcr\.io\/github\/github-mcp-server|api\.githubcopilot\.com\/mcp/i, { name: "GitHub", untrusted: "GitHub issues and pull requests", out: "GitHub comments and issues", private: "private repositories" }],
+	[/(^|[\s/])(@modelcontextprotocol\/server-gitlab|gitlab-mcp)\b|gitlab\.com\/api\/v4\/mcp/i, { name: "GitLab", untrusted: "GitLab issues and merge requests", out: "GitLab comments and issues", private: "private projects" }],
+	[/(^|[\s/])(@modelcontextprotocol\/server-slack|slack-mcp-server|@zencoderai\/slack-mcp-server)\b|mcp\.slack\.com/i, { name: "Slack", untrusted: "Slack messages", out: "Slack messages", private: "Slack conversations" }],
+	[/(^|[\s/])(@gongrzhe\/server-gmail-autoauth-mcp|gmail-mcp|mcp-gmail)\b/i, { name: "Gmail", untrusted: "email", out: "email", private: "your email" }],
+	[/(^|[\s/])(@notionhq\/notion-mcp-server|notion-mcp-server)\b|mcp\.notion\.com/i, { name: "Notion", untrusted: "Notion pages", out: "Notion pages", private: "Notion pages" }],
+	[/mcp\.linear\.app|(^|[\s/])linear-mcp\b/i, { name: "Linear", untrusted: "Linear issues", out: "Linear comments", private: "Linear issues" }],
+	[/mcp\.atlassian\.com|(^|[\s/])(mcp-atlassian|atlassian-mcp)\b/i, { name: "Atlassian", untrusted: "Jira and Confluence pages", out: "Jira comments", private: "Jira and Confluence" }],
+	[/(^|[\s/])(mcp-server-fetch|@modelcontextprotocol\/server-fetch|fetch-mcp|@kazuph\/mcp-fetch)\b/i, { name: "Fetch", untrusted: "web pages", out: "the web addresses it opens" }],
+	[/(^|[\s/])(@modelcontextprotocol\/server-puppeteer|@playwright\/mcp|playwright-mcp|chrome-devtools-mcp|@browserbasehq\/mcp|puppeteer-mcp)\b/i, { name: "browser", untrusted: "web pages", out: "the web addresses it opens" }],
+	[/(^|[\s/])(@modelcontextprotocol\/server-brave-search|tavily-mcp|exa-mcp-server|firecrawl-mcp|@perplexity-ai\/mcp-server|serper-mcp)\b/i, { name: "web search", untrusted: "search results", out: "search queries" }],
+	[/(^|[\s/])(@modelcontextprotocol\/server-postgres|postgres-mcp|mcp-server-postgres|mcp-server-sqlite|@modelcontextprotocol\/server-sqlite|mysql-mcp|mongodb-mcp-server|@supabase\/mcp-server-supabase)\b/i, { name: "database", private: "what's in the database" }],
+	[/(^|[\s/])(@modelcontextprotocol\/server-gdrive|google-drive-mcp|gdrive-mcp)\b/i, { name: "Google Drive", untrusted: "shared documents", private: "your Drive files" }],
+];
+
+function serverCapabilities(s) {
+	const text = [s.command, ...s.args, s.url].filter((x) => typeof x === "string").join(" ").slice(0, 2000);
+	return MCP_CAPABILITIES.find(([re]) => re.test(text))?.[1] ?? null;
+}
+
+const BYPASS_FIX = { type: "json-set", path: ["permissions", "defaultMode"], was: "bypassPermissions", value: "default", does: 'Set permissions.defaultMode to "default"' };
+const removeAllow = (rule, does) => ({ type: "json-remove", path: ["permissions", "allow"], value: rule, does: `Remove ${rule} from permissions.allow, so Claude Code asks before it ${does}` });
+
+function checkAttackPaths(ctx) {
+	// What each agent runs without asking.
+	const claude = { bypass: null, allow: [] };
+	for (const f of ctx.claudeSettingsFiles) {
+		const p = parsed(f)?.permissions;
+		if (!isObj(p)) continue;
+		// Claude Code ignores bypassPermissions in a project's shared settings.
+		if (p.defaultMode === "bypassPermissions" && !isProjectSettings(ctx, f)) claude.bypass ??= f;
+		for (const rule of arr(p.allow)) claude.allow.push([rule.trim(), f]);
+	}
+	const codexNever = ctx.files.some((f) => /((^|\/)\.codex|^\/etc\/codex)\/([^/]+\.)?config\.toml$/i.test(f.path) && parsed(f)?.approval_policy === "never");
+	const geminiYolo = ctx.findings.some((f) => f.id === "GM-YOLO");
+	const allowed = (re) => claude.allow.find(([r]) => re.test(r));
+	const agents = new Map();
+	const channel = (tool, kind, what, from, via = null) => {
+		const a = agents.get(tool) ?? { untrusted: [], private: [], out: [], via: [], concrete: false, sources: { untrusted: new Set(), private: new Set(), out: new Set() } };
+		if (!a[kind].some((c) => c.what === what)) a[kind].push({ what, from });
+		a.sources[kind].add(from);
+		if (via && !a.via.includes(via)) a.via.push(via);
+		if (from?.fix) a.concrete = true;
+		agents.set(tool, a);
+	};
+	for (const s of ctx.mcpServers.filter((x) => !x.disabled)) {
+		const caps = serverCapabilities(s);
+		if (!caps) continue;
+		const tool = s.file.tools?.[0] ?? "the agent";
+		const rule = tool === "Claude Code" ? allowed(new RegExp(`^mcp__${s.name.replace(/[^\w-]/g, "_")}(__.*)?$`, "i")) : null;
+		const own = s.alwaysAllow === true || (Array.isArray(s.alwaysAllow) && s.alwaysAllow.length > 0) || s.extra?.trust === true;
+		const auto = own || rule || (tool === "Claude Code" && claude.bypass) || (tool === "Codex" && codexNever) || (tool === "Gemini CLI" && geminiYolo);
+		if (!auto) continue;
+		const from = rule
+			? { file: rule[1], fix: `remove ${rule[0]} from permissions.allow`, autofix: removeAllow(rule[0], `uses the “${s.name}” MCP server`) }
+			: own
+				? { file: s.file, fix: `turn off the auto-approval on the “${s.name}” MCP server` }
+				: tool === "Claude Code" && claude.bypass
+					? { file: claude.bypass, fix: `turn off bypassPermissions in ${claude.bypass.path}`, autofix: BYPASS_FIX }
+					: { file: s.file, fix: `turn on approvals for ${tool}` };
+		const via = `the “${s.name}” MCP server`;
+		for (const kind of ["untrusted", "private", "out"]) if (caps[kind]) channel(tool, kind, caps[kind], from, via);
+	}
+	// Claude Code's own tools.
+	const fetch = allowed(/^WebFetch(\(\s*(domain:\*|\*)?\s*\))?$/i);
+	if (fetch) {
+		const from = { file: fetch[1], fix: `remove ${fetch[0]} from permissions.allow`, autofix: removeAllow(fetch[0], "fetches a web page") };
+		channel("Claude Code", "untrusted", "web pages", from, fetch[0]);
+		channel("Claude Code", "out", "the web addresses it fetches", from);
+	}
+	const net = allowed(/^Bash(\((\*|\*:\*|:\*|\*\*)?\))?$|^Bash\(\s*(curl|wget|Invoke-WebRequest|iwr)\b/i);
+	if (net) {
+		const from = { file: net[1], fix: `remove ${net[0]} from permissions.allow`, autofix: removeAllow(net[0], "runs a command") };
+		channel("Claude Code", "untrusted", "anything it downloads", from, net[0]);
+		channel("Claude Code", "out", "network commands", from);
+	}
+	if (claude.bypass && agents.has("Claude Code")) channel("Claude Code", "private", "any file on this computer", null);
+	// Secret files an agent can read, in the project.
+	if (ctx.findings.some((f) => f.id === "WS-SECRETS" || f.id === "CC-NO-SECRET-DENY")) for (const tool of agents.keys()) channel(tool, "private", "the project's secret files", null);
+	const list = (cs) => (cs.length > 1 ? `${cs.slice(0, -1).map((c) => c.what).join(", ")} and ${cs.at(-1).what}` : cs[0].what);
+	for (const [tool, a] of agents) {
+		if (!a.untrusted.length || !a.private.length || !a.out.length || !a.concrete) continue;
+		const fixable = [...a.out, ...a.untrusted].find((c) => c.from?.fix);
+		const file = fixable?.from.file ?? [...a.out, ...a.untrusted, ...a.private].find((c) => c.from)?.from.file;
+		const via = a.via.length > 1 ? `${a.via.slice(0, -1).join(", ")} and ${a.via.at(-1)}` : a.via[0] ?? "its settings";
+		// --fix makes the change only when it ends the path: when everything of
+		// one kind comes from that one setting.
+		const ends = ["out", "untrusted"].map((k) => [...a.sources[k]]).find((list) => list.length === 1 && list[0]?.autofix)?.[0];
+		add(ctx, "AGENT-ATTACK-PATH", { file: ends?.file ?? file, tool, autofix: ends?.autofix, vars: { tool, untrusted: list(a.untrusted.slice(0, 2)), private: list(a.private.slice(0, 2)), out: list(a.out.slice(0, 2)), via, fix: (ends ?? fixable?.from)?.fix ?? `turn on approvals for ${tool}` } });
+	}
 }
 
 function checkFile(ctx, f) {
@@ -437,7 +596,7 @@ function checkFile(ctx, f) {
 	else if (/(^|\/)\.claude\/plugins\/.+\/hooks\/hooks\.json$/i.test(p) || f.role === "claude-hooks") checkClaudeHooks(ctx, f, hooksOf(parsed(f)));
 	else if (/(^|\/)\.claude-plugin\/plugin\.json$/i.test(p)) checkClaudeHooks(ctx, f, hooksOf(parsed(f)?.hooks));
 	else if (/(^|\/)\.claude\.json$/i.test(p)) checkClaudeUserConfig(ctx, f);
-	else if (/(^|\/)\.codex\/([^/]+\.)?config\.toml$/i.test(p)) checkCodex(ctx, f);
+	else if (/((^|\/)\.codex|^\/etc\/codex)\/([^/]+\.)?config\.toml$/i.test(p)) checkCodex(ctx, f);
 	else if (/(^|\/)(\.gemini|gemini-cli|GeminiCli)\/(system-)?settings\.json$/i.test(p)) checkGemini(ctx, f);
 	else if (/(^|\/)\.gemini\/trustedFolders\.json$/i.test(p)) checkTrustedFolders(ctx, f, "Gemini CLI", geminiTrusted(parsed(f)));
 	else if (/(^|\/)\.copilot\/config\.json$/i.test(p)) checkTrustedFolders(ctx, f, "GitHub Copilot", copilotTrusted(parsed(f)));
@@ -458,7 +617,7 @@ function checkFile(ctx, f) {
 	else if (/(^|\/)(\.vscode|(Code|Code - Insiders|VSCodium|Cursor|Windsurf)\/User)\/settings\.json$/i.test(p)) checkVSCode(ctx, f);
 	else if (/(^|\/)opencode\.jsonc?$/i.test(p)) checkOpenCode(ctx, f);
 	else if (/(^|\/)\.grok\/config\.toml$/i.test(p)) checkGrok(ctx, f);
-	else if (/(^|\/)goose\/config\.ya?ml$/i.test(p)) checkGoose(ctx, f);
+	else if (/(^|\/)goose\/(config\/)?config\.ya?ml$/i.test(p)) checkGoose(ctx, f);
 	else if (/(^|\/)\.continue\/(?:.+\/)?[^/]+\.(?:ya?ml|json)$/i.test(p)) checkContinue(ctx, f);
 	else if (f.kind === "Shell profile") checkShellProfile(ctx, f);
 	else if (/(^|\/)\.aider\.conf\.ya?ml$/i.test(p)) checkAider(ctx, f);
@@ -490,7 +649,11 @@ function buildContext(input) {
 		const cleaned = cleanPath(raw.path);
 		if (!cleaned || seenPaths.has(cleaned)) continue;
 		seenPaths.add(cleaned);
-		const path = visibleName(cleaned);
+		// Composed Unicode, as git writes names: macOS can hand back "é" as
+		// "e" and an accent, and the same file then has the same name in
+		// every check. Two files whose names differ only that way, which Linux
+		// allows, are both kept.
+		const path = visibleName(cleaned.normalize("NFC"));
 		const file = {
 			path,
 			size: toInt(raw.size),
@@ -515,6 +678,15 @@ function buildContext(input) {
 		else if (typeof raw.content === "string" && !file.sensitive && !file.listed && !file.linked) {
 			file.content = maskSecrets(raw.content).text;
 			file.lines = file.content.split(/\r?\n/);
+			// If masking a secret broke a settings file that reads fine as written,
+			// its settings are read from the original, with each value masked, so
+			// the masking can't hide them from the checks.
+			if (/\.(jsonc?|toml|ya?ml)$/i.test(cleaned) && parsed(file) == null) {
+				// The command masks files as it reads them, and sends the settings
+				// it read from the original as `settings` in that case.
+				const original = raw.settings !== undefined ? raw.settings : file.content !== raw.content ? parseSettings(cleaned, raw.content) : null;
+				if (original !== null && typeof original === "object") file.parsed = maskValues(original);
+			}
 		}
 		const control = controlFor(path) ?? (file.role ? { tools: ["Claude Code"], kind: file.role === "claude-hooks" ? "Plugin hooks" : "Plugin MCP servers" } : null);
 		file.tools = control ? control.tools : file.loose ? ["Any agent started there"] : [];
@@ -574,17 +746,21 @@ function buildContext(input) {
 		claudeSettingsFiles: [],
 		// Project files whose settings run commands on their own: the first one each.
 		autorun: new Map(),
+		// How many servers each file's lines were looked up for.
+		serverLines: new Map(),
 		named,
 	};
 }
 
+// Paths come with forward slashes. A backslash is part of a name: on Linux
+// and macOS a file can be called "a\b.json", and reading it as a folder
+// would let that file take the place of a real a/b.json.
 function cleanPath(p) {
-	const unix = p.replace(/\\/g, "/");
-	const parts = unix.split("/").filter((s) => s && s !== ".");
+	const parts = p.split("/").filter((s) => s && s !== ".");
 	// As long as a path can be. Shorter would let a deep folder hide a file.
 	if (!parts.length || parts.includes("..") || parts.join("/").length > 4096) return null;
 	// Keep the leading slash of system files such as /etc/claude-code/managed-settings.json.
-	return (unix.startsWith("/") ? "/" : "") + parts.join("/");
+	return (p.startsWith("/") ? "/" : "") + parts.join("/");
 }
 
 // Strings and numbers from a JSON list, as text. Anything else is dropped.
@@ -599,9 +775,13 @@ const toInt = (n) => {
 };
 const arr = (x) => (Array.isArray(x) ? x.filter((s) => typeof s === "string") : []);
 const isObj = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+// Text cut to n characters, its spaces collapsed. A long line, as in a
+// minified file, is cut before the spaces are, so this stays quick.
 const clip = (s, n = 180) => {
-	const t = String(s).replace(/\s+/g, " ").trim();
-	return t.length > n ? t.slice(0, n - 1) + "…" : t;
+	const raw = String(s);
+	const limit = n * 8 + 64;
+	const t = raw.slice(0, limit).replace(/\s+/g, " ").trim();
+	return t.length > n || raw.length > limit ? t.slice(0, n - 1) + "…" : t;
 };
 
 function isInstructionFile(f) {
@@ -725,7 +905,16 @@ function add(ctx, id, opts = {}) {
 }
 
 // `own` is the wording of a company's own rule, which isn't in the catalog.
-function makeFinding(id, { file, line = 0, evidence, vars = {}, tool, rule: own } = {}) {
+//
+// `autofix` is what --fix can change for a finding, by the path to a value
+// in its file:
+//   json-set     set the value
+//   json-remove  take one entry out of a list
+//   toml-set     set a top-level value in a TOML file
+//   pin          add the version npx ran to a package in an MCP server's args
+// The command makes the edit on the file as it is on disk, and only if the
+// result reads back as exactly that change.
+function makeFinding(id, { file, line = 0, evidence, vars = {}, tool, rule: own, autofix } = {}) {
 	const rule = own ?? RULES[id];
 	if (!rule) throw new Error(`Unknown rule ${id}`);
 	const filePath = file?.path ?? null;
@@ -746,8 +935,17 @@ function makeFinding(id, { file, line = 0, evidence, vars = {}, tool, rule: own 
 		vars: values,
 		// Set for a company's own rule: what it's called and where it's explained.
 		...(own ? { custom: { name: own.name, reference: own.reference } } : {}),
+		...(autofix && fixable(filePath) ? { autofix } : {}),
 	};
 }
+
+// --fix changes files in the project and the home folder only, and not
+// ~/.claude.json, which Claude Code rewrites as it runs, or plugin files,
+// which an update replaces. A project's agent files in a template, example
+// or test folder are left to whoever keeps them: they're what the project
+// hands out, not what its agents run with.
+const TEMPLATE_FOLDER = /(^|\/)(templates?|examples?|samples?|fixtures?|__fixtures__|testdata|test-data|tests?|__tests__|specs?|mocks?|demos?|boilerplates?|starters?|scaffolds?|skeletons?)\//i;
+const fixable = (p) => Boolean(p) && !/^(\/|[A-Za-z]:)/.test(p) && !/(^|\/)\.claude\.json$/i.test(p) && !/(^|\/)\.claude\/plugins\//i.test(p) && !(TEMPLATE_FOLDER.test(p) && !p.startsWith("~"));
 
 function fillTemplate(text, values) {
 	return text.replace(/\{(\w+)\}/g, (_, k) => {
@@ -792,9 +990,17 @@ function headlineFor(counts, top, hasControlFiles) {
 // --- Claude Code -------------------------------------------------------------
 
 function parsed(file) {
-	if (file.parsed === undefined) file.parsed = (/\.toml$/i.test(file.path) ? parseTOML(file.content) : /\.ya?ml$/i.test(file.path) ? parseYAML(file.content) : parseJSONC(file.content)) ?? null;
+	if (file.parsed === undefined) file.parsed = parseSettings(file.path, file.content);
 	return file.parsed;
 }
+function parseSettings(path, text) {
+	try {
+		return (/\.toml$/i.test(path) ? parseTOML(text) : /\.ya?ml$/i.test(path) ? parseYAML(text) : parseJSONC(text)) ?? null;
+	} catch {
+		return null;
+	}
+}
+
 
 // Environment variables that make the programs an agent runs load other
 // code as they start: a Node module, a shared library, a shell script, a
@@ -916,7 +1122,7 @@ function checkClaudeSettings(ctx, f) {
 	if (p.defaultMode === "bypassPermissions") {
 		// Claude Code 2.1.257 and later ignore this in project settings.
 		const line = lineOf(f, /bypassPermissions/);
-		add(ctx, shared ? "CC-BYPASS-PROJECT" : "CC-BYPASS", { file: f, line, evidence: evidenceLine(f, line) });
+		add(ctx, shared ? "CC-BYPASS-PROJECT" : "CC-BYPASS", { file: f, line, evidence: evidenceLine(f, line), autofix: BYPASS_FIX });
 	} else if (p.defaultMode === "acceptEdits") {
 		const line = lineOf(f, /acceptEdits/);
 		add(ctx, "CC-ACCEPT-EDITS", { file: f, line, evidence: evidenceLine(f, line) });
@@ -926,7 +1132,7 @@ function checkClaudeSettings(ctx, f) {
 		const r = rule.trim();
 		const line = lineOf(f, r);
 		const hit = (id) => add(ctx, id, { file: f, line, evidence: evidenceLine(f, line), vars: { rule: r } });
-		if (/^Bash(\((\*|\*:\*|:\*|\*\*)?\))?$/i.test(r)) hit("CC-ALLOW-ALL-BASH");
+		if (/^Bash(\((\*|\*:\*|:\*|\*\*)?\))?$/i.test(r)) add(ctx, "CC-ALLOW-ALL-BASH", { file: f, line, evidence: evidenceLine(f, line), vars: { rule: r }, autofix: { ...removeAllow(r, "runs a command"), value: rule } });
 		else if (/^Bash\(\s*(sudo|su|doas|rm|bash|sh|zsh|fish|pwsh|powershell|cmd|python3?|node|deno|bun|npx|perl|ruby|php|eval|exec|iex|Invoke-Expression|chmod|chown|dd|docker|kubectl|env|xargs|find)\b/i.test(r)) hit("CC-ALLOW-RISKY-BASH");
 		else if (/^Bash\(\s*(curl|wget|ssh|scp|sftp|rsync|nc|ncat|netcat|ftp|telnet|Invoke-WebRequest|iwr|irm|git push|gh)\b/i.test(r)) hit("CC-ALLOW-NET-BASH");
 		else if (/^(Edit|Write|MultiEdit|NotebookEdit)\(\s*(\/\/|~\/|~$|\/\*\*|[A-Za-z]:)/i.test(r)) hit("CC-ALLOW-WRITE-ANYWHERE");
@@ -1041,11 +1247,13 @@ function checkCodex(ctx, f) {
 		const approval = scope.approval_policy;
 		const sandbox = scope.sandbox_mode;
 		const line = lineOf(f, sandbox === "danger-full-access" ? /danger-full-access/ : /approval_policy/);
-		if (approval === "never" && sandbox === "danger-full-access") add(ctx, "CX-YOLO", { file: f, line, evidence: evidenceLine(f, line), vars: { where } });
+		// --fix sets the top level's approval_policy; a profile's is changed by hand.
+		const autofix = where === "" ? { type: "toml-set", path: ["approval_policy"], was: "never", value: "on-request", does: 'Set approval_policy to "on-request", so Codex asks before it runs something new' } : undefined;
+		if (approval === "never" && sandbox === "danger-full-access") add(ctx, "CX-YOLO", { file: f, line, evidence: evidenceLine(f, line), vars: { where }, autofix });
 		else if (sandbox === "danger-full-access") add(ctx, "CX-FULL-ACCESS", { file: f, line, evidence: evidenceLine(f, line), vars: { where } });
 		else if (approval === "never" && sandbox !== "read-only") {
 			const l = lineOf(f, /approval_policy\s*=\s*["']never/);
-			add(ctx, "CX-NEVER-ASK", { file: f, line: l, evidence: evidenceLine(f, l), vars: { where } });
+			add(ctx, "CX-NEVER-ASK", { file: f, line: l, evidence: evidenceLine(f, l), vars: { where }, autofix });
 		}
 	}
 	if (toml.sandbox_workspace_write?.network_access === true) {
@@ -1168,7 +1376,7 @@ function checkVSCode(ctx, f) {
 		return { file: f, line, evidence: evidenceLine(f, line) };
 	};
 	for (const key of VS_CODE_AUTO_APPROVE) {
-		if (json[key] === true || json[key] === "autoApprove") add(ctx, "VS-AUTO-APPROVE", { ...at(key), vars: { setting: key } });
+		if (json[key] === true || json[key] === "autoApprove") add(ctx, "VS-AUTO-APPROVE", { ...at(key), vars: { setting: key }, autofix: json[key] === true ? { type: "json-set", path: [key], was: true, value: false, does: `Set ${key} to false` } : undefined });
 	}
 	if (json["github.copilot.chat.claudeAgent.allowDangerouslySkipPermissions"] === true) add(ctx, "VS-CLAUDE-SKIP", at("allowDangerouslySkipPermissions"));
 	if (json["chat.tools.terminal.ignoreDefaultAutoApproveRules"] === true) add(ctx, "VS-NO-DEFAULT-RULES", at("ignoreDefaultAutoApproveRules"));
@@ -1634,8 +1842,15 @@ function checkInstructionText(ctx, f) {
 		const m = firstMatch(text, re, affirmative, reject);
 		if (m) add(ctx, id, { ...at(m.index + (m[0].length - m[0].trimStart().length)), vars: varsFrom ? varsFrom(m) : {} });
 	};
+	// Where the code blocks are, worked out once if a rule needs it.
+	let fence = null;
 	textRule("TXT-REMOTE-EXEC", RX_REMOTE_EXEC, null, { affirmative: true });
 	textRule("TXT-EXFIL", RX_EXFIL_HOST, (m) => ({ host: m[1] }));
+	// An image inside code isn't drawn, so it's an example, not an image.
+	textRule("TXT-IMAGE-EXFIL", RX_IMAGE_EXFIL, (m) => ({ host: (m[1] ?? m[2]).toLowerCase() }), {
+		affirmative: true,
+		reject: (m) => (fence ??= fenceAt(text))(m.index) !== null || inCodeSpan(text, m.index),
+	});
 	textRule("TXT-PASTE-SITE", RX_PASTE_SITE, (m) => ({ host: m[1].toLowerCase() }), { affirmative: true });
 	// A paste site already has its own finding.
 	textRule("TXT-REMOTE-INSTRUCTIONS", RX_REMOTE_INSTRUCTIONS, (m) => ({ host: (m[1] ?? m[2]).toLowerCase() }), { affirmative: true, reject: (m) => RX_PASTE_SITE.test(` ${m[1] ?? m[2]}`) });
@@ -1643,10 +1858,14 @@ function checkInstructionText(ctx, f) {
 	textRule("TXT-QUARANTINE", RX_QUARANTINE, null, { affirmative: true });
 	// Defensive instructions quote injections as examples, as in: if a page
 	// says "ignore previous instructions", don't follow it.
-	let fence = null;
 	textRule("TXT-OVERRIDE", RX_OVERRIDE, (m) => ({ phrase: clip(m[0], 80) }), {
 		affirmative: true,
-		reject: (m) => quotedExample(text, m, "\"'“‘`") || fencedExample(text, m.index, (fence ??= fenceAt(text))),
+		reject: (m) =>
+			quotedExample(text, m, "\"'“‘`") ||
+			fencedExample(text, m.index, (fence ??= fenceAt(text))) ||
+			// One word joined by hyphens, as in --dangerously-skip-permissions, is a
+			// command-line option, which FLAG-DOCS reports for its agent.
+			(/^[\w-]+$/.test(m[0]) && /-/.test(m[0])),
 	});
 	// Setting up a project ("copy .env.example to .env", "add .env to
 	// .gitignore") isn't handing secrets to the agent.
@@ -1679,29 +1898,60 @@ function checkInstructionText(ctx, f) {
 function collectMcpServers(ctx, f) {
 	const p = f.path;
 	let groups = [];
-	if (/(^|\/)(\.codex\/([^/]+\.)?config|\.grok\/config)\.toml$/i.test(p)) groups = [parsed(f)?.mcp_servers];
+	const projects = [];
+	const secondary = [];
+	// Where the servers are in the file, for --fix: "mcpServers" or "servers".
+	let rootKey = null;
+	if (/((^|\/)\.codex|^\/etc\/codex)\/([^/]+\.)?config\.toml$|(^|\/)\.grok\/config\.toml$/i.test(p)) groups = [parsed(f)?.mcp_servers];
 	// Continue lists servers with a name each; Goose calls them extensions.
 	else if (/(^|\/)\.continue\/(config|mcpServers\/[^/]+)\.ya?ml$/i.test(p)) {
 		const list = parsed(f)?.mcpServers;
 		groups = [Array.isArray(list) ? Object.fromEntries(list.slice(0, 200).filter(isObj).map((x, n) => [typeof x.name === "string" ? x.name : `server ${n + 1}`, x])) : null];
-	} else if (/(^|\/)goose\/config\.ya?ml$/i.test(p)) groups = [parsed(f)?.extensions];
+	} else if (/(^|\/)goose\/(config\/)?config\.ya?ml$/i.test(p)) groups = [parsed(f)?.extensions];
 	else if (/\.jsonc?$/i.test(p)) {
 		const json = parsed(f);
 		if (!isObj(json)) return;
-		if (/(^|\/)(\.vscode|\.github)\/mcp\.json$/i.test(p)) groups = [json.servers, json.mcpServers];
+		// VS Code reads "servers"; servers under "mcpServers" are kept apart by name.
+		if (/(^|\/)(\.vscode|\.github)\/mcp\.json$/i.test(p)) {
+			groups = [json.servers];
+			rootKey = "servers";
+			secondary.push(["mcpServers", json.mcpServers]);
+		}
 		else if (/(^|\/)(\.amp|\.config\/amp)\/settings\.json$/i.test(p)) groups = [json["amp.mcpServers"]];
 		else if (/(^|\/)opencode\.jsonc?$/i.test(p)) groups = [json.mcp];
 		else if (/(^|\/)(\.zed|zed|Zed)\/settings\.json$/i.test(p)) groups = [json.context_servers];
-		else if (/\/User\/mcp\.json$/i.test(p)) groups = [json.servers, json.mcpServers];
+		else if (/\/User\/mcp\.json$/i.test(p)) {
+			groups = [json.servers];
+			rootKey = "servers";
+			secondary.push(["mcpServers", json.mcpServers]);
+		}
 		else if (/\/User\/settings\.json$/i.test(p)) groups = [json.mcp?.servers];
-		else if (/(^|\/)\.claude\.json$/i.test(p)) groups = [json.mcpServers, ...(isObj(json.projects) ? Object.values(json.projects).map((x) => x?.mcpServers) : [])];
+		else if (/(^|\/)\.claude\.json$/i.test(p)) {
+			// Servers for every project, then each project's own, which are
+			// told apart by the project's folder.
+			groups = [json.mcpServers];
+			rootKey = "mcpServers";
+			if (isObj(json.projects)) for (const [dir, x] of Object.entries(json.projects)) projects.push([dir, x?.mcpServers]);
+		}
 		else if (/(^|\/)\.vscode\/settings\.json$/i.test(p)) groups = [json.mcp?.servers];
 		else if (f.role === "mcp-servers") groups = [json.mcpServers ?? json];
-		else groups = [json.mcpServers];
+		else {
+			groups = [json.mcpServers];
+			rootKey = "mcpServers";
+		}
 	}
-	for (const group of groups) {
+	for (const [dir, group, label] of [...groups.map((g) => [null, g, null]), ...projects.map(([d, g]) => [d, g, null]), ...secondary.map(([l, g]) => [null, g, l])]) {
 		if (!isObj(group)) continue;
-		for (const [name, def] of Object.entries(group)) ctx.mcpServers.push(normalizeServer(name, def, f));
+		for (const [name, def] of Object.entries(group)) {
+			const server = normalizeServer(name, def, f);
+			if (dir) server.project = dir;
+			if (label) server.group = label;
+			// Where its args are, for --fix: only for a command and an args list
+			// written as such, as the fix edits that list.
+			const plain = isObj(def) && typeof def.command === "string" && Array.isArray(def.args);
+			server.at = !plain ? null : dir ? ["projects", dir, "mcpServers", name] : label ? [label, name] : rootKey ? [rootKey, name] : null;
+			ctx.mcpServers.push(server);
+		}
 	}
 }
 
@@ -1752,12 +2002,19 @@ function redact(value) {
 	return isMasked(value) ? value : `•••• (${value.length} chars)`;
 }
 
+// Lines are found for a file's first servers only. Each search reads the
+// whole file, so a file with thousands of servers would take seconds; the
+// findings for the rest still show, without a line.
+const MAX_SERVER_LINES = 300;
 function checkMcpServer(ctx, s) {
 	const f = s.file;
 	const tool = f.tools[0] ?? null;
-	const nameLine = lineOf(f, `"${s.name}"`) || lineOf(f, s.name);
+	const counted = (ctx.serverLines.get(f.path) ?? 0) + 1;
+	ctx.serverLines.set(f.path, counted);
+	const lookup = counted <= MAX_SERVER_LINES;
+	const nameLine = lookup ? lineOf(f, `"${s.name}"`) || lineOf(f, s.name) : 0;
 	const base = (line = nameLine) => ({ file: f, line, tool, evidence: evidenceLine(f, line) });
-	const near = (test) => lineAfter(f, test, nameLine);
+	const near = (test) => (lookup ? lineAfter(f, test, nameLine) : 0);
 
 	for (const [key, value] of [...Object.entries(s.env), ...Object.entries(s.headers)]) {
 		if (isSecretValue(key, value)) {
@@ -1798,6 +2055,9 @@ function checkMcpServer(ctx, s) {
 		add(ctx, "MCP-UNPINNED", {
 			...base(near(pkg.spec) || nameLine),
 			vars: { server: s.name, command: clip([s.command, ...s.args].join(" "), 90), pkg: pkg.name, lookup: pkg.python ? `pip index versions ${pkg.name}` : `npm view ${pkg.name} version` },
+			// Only npx running the package as one of its args, as in npx -y pkg, with
+			// no version or "latest": the version npx installed is in its cache.
+			autofix: s.at && !pkg.python && /\.jsonc?$/i.test(f.path) && pinnable(s, pkg) ? { type: "pin", path: [...s.at, "args"], value: pkg.spec, package: pkg.name, does: `Pin ${pkg.name} to an exact version` } : undefined,
 		});
 	}
 
@@ -1855,6 +2115,13 @@ const LAUNCHER_OPTIONS = {
 		valued: ["-p", "--python", "--with", "--with-editable", "--with-requirements", "--index", "--index-url", "--extra-index-url", "--default-index", "--find-links", "--constraints", "--overrides", "--cache-dir", "--directory", "--project", "--env-file", "--pip-args"],
 	},
 };
+
+function pinnable(s, pkg) {
+	if (!/^npx(\.cmd|\.exe)?$/i.test(String(s.command).split(/[\\/]/).pop())) return false;
+	if (s.args.some((a) => /^(-p|--package)(=|$)/.test(a))) return false;
+	if (pkg.spec !== pkg.name && pkg.spec !== `${pkg.name}@latest`) return false;
+	return s.args.filter((a) => a === pkg.spec).length === 1;
+}
 
 export function packageSpec(command, args) {
 	const raw = launcherSpec(command, args);
@@ -2319,8 +2586,9 @@ const SCOPE_COPIES = new Map(
 	}),
 );
 
-// The official package or scope a package name imitates, or null.
-function lookalikeOf(name, python) {
+// The official package or scope a package name imitates, or null. Exported
+// for other tools that check package names.
+export function lookalikeOf(name, python) {
 	const lower = python ? knownName("PyPI", name) : String(name).toLowerCase();
 	const official = python ? OFFICIAL_PYPI_MCP : OFFICIAL_MCP_PACKAGES;
 	if (official.includes(lower) || lower.length > 100) return null;
@@ -2657,7 +2925,9 @@ export function applyLookup(result, hits) {
 // --- Score -------------------------------------------------------------------
 
 const bySeverity = (a, b) =>
-	SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) || a.category.localeCompare(b.category) || (a.file ?? "").localeCompare(b.file ?? "");
+	SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) || byText(a.category, b.category) || byText(a.file ?? "", b.file ?? "");
+// By code unit, so the order is the same whatever language the computer uses.
+const byText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
 // The level of a finding's rule. A company's own rule isn't in the catalog,
 // so its finding says. Null for a finding that names no rule there is.

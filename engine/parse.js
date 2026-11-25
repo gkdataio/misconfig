@@ -22,7 +22,8 @@ export function parseJSONC(text) {
 			inString = true;
 			out += c;
 		} else if (c === "/" && n === "/") {
-			while (i < s.length && s[i] !== "\n") i++;
+			// To the end of the line, which old Mac files end with a bare \r.
+			while (i < s.length && s[i] !== "\n" && !(s[i] === "\r" && s[i + 1] !== "\n")) i++;
 			out += "\n";
 		} else if (c === "/" && n === "*") {
 			i += 2;
@@ -37,7 +38,7 @@ export function parseJSONC(text) {
 			for (;;) {
 				while (j < s.length && /\s/.test(s[j])) j++;
 				if (s[j] === "/" && s[j + 1] === "/") {
-					while (j < s.length && s[j] !== "\n") j++;
+					while (j < s.length && s[j] !== "\n" && !(s[j] === "\r" && s[j + 1] !== "\n")) j++;
 				} else if (s[j] === "/" && s[j + 1] === "*") {
 					const end = s.indexOf("*/", j + 2);
 					j = end < 0 ? s.length : end + 2;

@@ -28,15 +28,18 @@ const TOKEN_PATTERNS = [
 ];
 
 // key = value, "key": "value", KEY=value, --api-key value ...
+// Values never take in a backslash: in a JSON or TOML string it escapes the
+// next character, and masking it would break the file, which would hide its
+// settings from every check.
 const ASSIGNMENT =
-	/((?:api[_-]?key|apikey|access[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|client[_-]?secret|token|secret|password|passwd|pwd|private[_-]?key)["']?(?:\s*[:=]\s*|\s+)["']?)([^\s"'`,;{}()<>[\]«»]{12,})/gi;
+	/((?:api[_-]?key|apikey|access[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|client[_-]?secret|token|secret|password|passwd|pwd|private[_-]?key)["']?(?:\s*[:=]\s*|\s+)["']?)([^\s"'`,;{}()<>[\]«»\\]{12,})/gi;
 const BEARER = /(\bBearer\s+)([A-Za-z0-9._~+/=-]{16,})/g;
 // The user name can be empty, as in redis://:password@host.
-const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]{0,30}:\/\/[^\s/:@"']{0,64}:)([^\s/@"']{6,})(?=@)/gi;
+const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]{0,30}:\/\/[^\s/:@"'\\]{0,64}:)([^\s/@"'\\]{6,})(?=@)/gi;
 // Passwords are often short and plain, so a value named as one is masked from
 // six characters: --password value, password: value, "DB_PASSWORD": "value".
-const PASSWORD = /((?:--?(?:password|passwd|passphrase)[ \t]+|(?:password|passwd|passphrase)["']?[ \t]*[:=][ \t]*)["']?)([^\s"'`,;{}()<>[\]«»]{6,})/gi;
-const URL_TOKEN = /([?&](?:token|key|api[_-]?key|apikey|access[_-]?token|auth|secret|sig|signature|password)=)([^&#\s"']{8,})/gi;
+const PASSWORD = /((?:--?(?:password|passwd|passphrase)[ \t]+|(?:password|passwd|passphrase)["']?[ \t]*[:=][ \t]*)["']?)([^\s"'`,;{}()<>[\]«»\\]{6,})/gi;
+const URL_TOKEN = /([?&](?:token|key|api[_-]?key|apikey|access[_-]?token|auth|secret|sig|signature|password)=)([^&#\s"'\\]{8,})/gi;
 
 const PLACEHOLDER =
 	/^(?:\$|%|<|\{|\[)|\$\{|\{\{|your[_-]?|example|placeholder|changeme|change[_-]?me|redacted|dummy|sample|test[_-]?key|x{4,}|\*{3,}|\.{3}|^(?:true|false|null|none|undefined)$|^process\.env|^env[.:]/i;
@@ -176,4 +179,15 @@ export function maskSecrets(text) {
 // "«masked:openai-key:51»" -> "•••• (openai key, 51 chars)"
 export function describeMasks(text) {
 	return String(text).replace(/«masked:([a-z0-9-]+):(\d+)»/g, (_, kind, len) => `•••• (${kind.replace(/-/g, " ")}, ${len} chars)`);
+}
+
+// Every key and string in parsed settings, masked the way file text is: for
+// a settings file whose text masking would break.
+export function maskValues(value, depth = 0) {
+	if (typeof value === "string") return maskSecrets(value).text;
+	if (depth > 64 || value === null || typeof value !== "object") return value;
+	if (Array.isArray(value)) return value.map((v) => maskValues(v, depth + 1));
+	const out = {};
+	for (const [k, v] of Object.entries(value)) Object.defineProperty(out, maskSecrets(k).text, { value: maskValues(v, depth + 1), enumerable: true, writable: true, configurable: true });
+	return out;
 }

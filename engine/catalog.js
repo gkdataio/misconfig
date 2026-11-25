@@ -24,6 +24,13 @@ export const CATEGORIES = {
 
 export const RULES = {
 	// --- Permissions ---------------------------------------------------------
+	"AGENT-ATTACK-PATH": {
+		severity: "high", category: "permissions",
+		title: "A prompt injection in {untrusted} could have {tool} send out {private}",
+		name: "A prompt injection could have an agent send private data out",
+		why: "Through {via}, {tool} takes in {untrusted}, can read {private}, and can send data out through {out}, and none of it asks you first. Each is ordinary on its own; together they're how agents leak data, as when a GitHub issue had an agent copy private repositories into a public pull request in 2025.",
+		fix: "Make one of them ask before it runs: {fix}.",
+	},
 	"CC-BYPASS": {
 		severity: "high", category: "permissions", tool: "Claude Code",
 		title: "Claude Code runs with every permission prompt turned off",
@@ -436,6 +443,13 @@ export const RULES = {
 		name: "An instruction file points at a service that collects what's sent to it",
 		why: "Whoever set up the address on {host}, or has the link, can read what's sent there. Security testers use these services, and so do attackers moving stolen data out.",
 		fix: "Remove the address unless you set it up yourself.",
+	},
+	"TXT-IMAGE-EXFIL": {
+		severity: "high", category: "instructions",
+		title: "{file} asks the agent to put data in an image's address",
+		name: "An instruction file asks the agent to put data in an image's address",
+		why: "An image in the agent's reply loads as soon as it's shown, and its address carries whatever the agent fills in, such as code, the conversation or a secret, to {host}.",
+		fix: "Remove the image, unless the address is yours and the agent fills nothing in.",
 	},
 	"TXT-OVERRIDE": {
 		severity: "medium", category: "instructions",

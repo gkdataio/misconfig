@@ -100,7 +100,7 @@ export const visibleName = (text) =>
 
 // Code an agent loads as plugins or tools as soon as it starts in a project.
 // Listed by name, never read.
-export const PLUGIN_CODE = /(^|\/)(\.opencode\/(plugins?|tools)|\.amp\/plugins|\.cline\/plugins)\/[^/]+\.[cm]?[jt]sx?$/i;
+export const PLUGIN_CODE = /(^|\/)((\.opencode|\.config\/opencode)\/(plugins?|tools)|(\.amp|\.config\/amp)\/plugins|\.cline\/plugins)\/[^/]+\.[cm]?[jt]sx?$/i;
 
 // Instruction files too large to read whole are checked from their start,
 // where an agent reads first. Settings files aren't: half a JSON file can't

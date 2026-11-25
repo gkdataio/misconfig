@@ -206,7 +206,7 @@ test("Windsurf workflows, Gemini CLI commands and files that settings name are r
 		[".aider.conf.yml", "read:\n  - CONVENTIONS.md\n", "CONVENTIONS.md"],
 	]) {
 		const result = named(settingsPath, settings, file);
-		assert.ok(result.findings.some((f) => f.id === "TXT-REMOTE-EXEC" && f.file === file), `${settingsPath} names ${file}`);
+		assert.ok(result.findings.some((f) => f.id === "TXT-REMOTE-EXEC" && [f.file, ...(f.also ?? []).map((a) => a.file)].includes(file)), `${settingsPath} names ${file}`);
 		assert.ok(result.controlMap.some((f) => f.path === file && f.kind === "Instructions"));
 	}
 	assert.deepEqual(ids(named("README.md", "", "PROJECT_NOTES.md")), [], "no setting names it");
@@ -215,7 +215,8 @@ test("Windsurf workflows, Gemini CLI commands and files that settings name are r
 	// On disk, the command reads the files they name.
 	const dir = await folder("named", { ".gemini/settings.json": J({ context: { fileName: ["GEMINI.md", "PROJECT_NOTES.md"] } }), "PROJECT_NOTES.md": evil, "opencode.json": J({ instructions: ["docs/*.md"] }), "docs/guide.md": evil, "docs/other.txt": evil });
 	const result = analyze(await discover({ dir, includeUser: false }));
-	assert.deepEqual(result.findings.filter((f) => f.id === "TXT-REMOTE-EXEC").map((f) => f.file).sort(), ["PROJECT_NOTES.md", "docs/guide.md"]);
+	// The same line in two files is one finding that names both.
+	assert.deepEqual(result.findings.filter((f) => f.id === "TXT-REMOTE-EXEC").flatMap((f) => [f.file, ...(f.also ?? []).map((a) => a.file)]).sort(), ["PROJECT_NOTES.md", "docs/guide.md"]);
 });
 
 test("a link from an agent folder to a folder outside the project is reported", async (t) => {

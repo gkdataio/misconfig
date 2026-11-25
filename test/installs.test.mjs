@@ -969,6 +969,8 @@ function childEnv(extra) {
 	const env = { ...process.env };
 	for (const key of Object.keys(env)) {
 		if (/^(?:CLAUDE_CONFIG_DIR|CODEX_HOME|COPILOT_HOME|XDG_CONFIG_HOME|FORCE_COLOR|MISCONFIG_URL|MISCONFIG_OSV_URL|VSCODE_EXTENSIONS|NPM_CONFIG_PREFIX)$/i.test(key)) delete env[key];
+		// The tests run in CI too, where these would change what the command does.
+		if (/^(?:CI|GITHUB_ACTIONS|GITHUB_WORKSPACE|GITHUB_STEP_SUMMARY|TF_BUILD|JENKINS_URL|TEAMCITY_VERSION|GITLAB_CI|BUILDKITE|CIRCLECI|TRAVIS|CODEBUILD_BUILD_ID|BITBUCKET_BUILD_NUMBER|DRONE|APPVEYOR|BUILD_BUILDID)$/.test(key)) delete env[key];
 	}
 	return {
 		...env,

@@ -1,13 +1,9 @@
 // What misconfig knows to be malicious, or to be missing security fixes,
 // from public reports. It ships with each release and is checked on the
-// computer, with no network requests. Add --lookup to also ask OSV.dev, which
-// is updated every day. Every entry names its source, and only facts the
-// source states are used.
-//
-// Shared and private reports repeat these words, and misconfig.ai accepts
-// only words this file gives. When the wording of a fact changes after a
-// release, keep the old wording in the entry's `was` (for example
-// was: { what: ["..."] }), so reports made by earlier versions still open.
+// computer. Before each check the command also downloads today's list of
+// malware OSV.dev has listed since (see addKnownMalware), and --lookup asks
+// OSV.dev directly. Every entry names its source, and only facts the source
+// states are used.
 
 // The day the OSV.dev listings below were taken. misconfig.ai publishes the
 // ones listed since (see addKnownMalware).
@@ -184,7 +180,6 @@ export const KNOWN_PACKAGES = {
 		versions: "all",
 		what: "a copy of Postmark's MCP server published by someone else. From version 1.0.16 it secretly copied every email it sent to the publisher",
 		source: "Koi Security, September 2025",
-		was: { source: ["Dark Reading, September 2025"] },
 	},
 	"npm:@lanyer640/mcp-runcommand-server": {
 		versions: "all",
@@ -477,10 +472,6 @@ export const TRACES = [
 		campaign: "the tampered Claude Code extension for Cursor",
 		what: "The tampered Claude Code extension served by Cursor's marketplace in October 2026 keeps its SSH tunnel running with a file in ~/.config or the Windows Startup folder",
 		fix: "Remove the extension and what it left, delete any key ending in svc-telemetry from ~/.ssh/authorized_keys (and the SysMon scheduled task on Windows), and follow Cursor's security notice",
-		was: {
-			what: ["The tampered Claude Code extension served by Cursor's marketplace in October 2026 keeps its SSH tunnel running with these files"],
-			fix: ["Remove the files and the extension, delete any key ending in svc-telemetry from ~/.ssh/authorized_keys (and the SysMon scheduled task on Windows), and follow Cursor's security notice"],
-		},
 	},
 ];
 

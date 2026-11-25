@@ -197,7 +197,7 @@ export function explainFile(file, { json = null, servers = [] } = {}) {
 	else if (/(^|\/)\.claude\/plugins\/known_marketplaces\.json$/i.test(p)) out = claudeMarketplaces(json);
 	else if (/(^|\/)\.claude\/plugins\/.+\/hooks\/hooks\.json$/i.test(p)) out = { parts: [], details: claudeHooks(json?.hooks) };
 	else if (/(^|\/)\.claude\.json$/i.test(p)) out = claudeUserConfig(json);
-	else if (/(^|\/)\.codex\/([^/]+\.)?config\.toml$/i.test(p)) out = codexConfig(json);
+	else if (/((^|\/)\.codex|^\/etc\/codex)\/([^/]+\.)?config\.toml$/i.test(p)) out = codexConfig(json);
 	else if (/(^|\/)codex\/requirements\.toml$/i.test(p)) out = codexRequirements(json);
 	else if (/(^|\/)(\.gemini|gemini-cli|GeminiCli)\/(system-)?settings\.json$/i.test(p)) out = geminiSettings(json);
 	else if (/(^|\/)\.gemini\/trustedFolders\.json$/i.test(p)) out = trustedFolders(geminiTrusted(json));
@@ -217,7 +217,7 @@ export function explainFile(file, { json = null, servers = [] } = {}) {
 	else if (/(^|\/)\.cline\/data\/globalState\.json$/i.test(p)) out = clineState(json);
 	else if (/(^|\/)\.grok\/config\.toml$/i.test(p)) out = grokConfig(json);
 	else if (/(^|\/)(\.amp|\.config\/amp)\/settings\.json$/i.test(p)) out = ampSettings(json);
-	else if (/(^|\/)goose\/config\.ya?ml$/i.test(p)) out = gooseConfig(file);
+	else if (/(^|\/)goose\/(config\/)?config\.ya?ml$/i.test(p)) out = gooseConfig(file);
 	else if (/(^|\/)\.continue\/config\.ya?ml$/i.test(p)) out = continueConfig(file);
 	else if (/(^|\/)\.aider\.conf\.ya?ml$/i.test(p)) out = aiderConfig(file);
 	else if (file.kind === "Shell profile") out = shellProfile(file);
