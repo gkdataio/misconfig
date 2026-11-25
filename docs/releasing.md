@@ -14,7 +14,7 @@ A release of `@misconfig/cli` is packed by GitHub Actions from a tagged commit o
    ```
 
    [The release workflow](../.github/workflows/release.yml) checks that the tag matches `package.json` and is on `main`. It runs the tests, packs the archive, and installs and runs that archive on Linux, macOS and Windows with Node.js 18 and 24. Then it stages the archive on npm with its provenance, and drafts a GitHub release with the archive attached.
-4. On npmjs.com, open the staged packages, check the staged version and approve it. `npm stage list @misconfig/cli` and `npm stage approve` with the ID it shows do the same from a terminal. Until then, npm installs the version it did before.
+4. On npmjs.com, open the staged packages, check the staged version and approve it. `npm stage list @misconfig/cli` and `npm stage approve` with the ID it shows do the same from a terminal. npm checks a staged release itself first, which takes a few minutes, and `npm stage approve` says so until it's done. Until you approve, npm installs the version it did before.
 5. Publish the draft release on GitHub.
 
 To take a staged release back, reject it on npm instead of approving it.

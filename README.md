@@ -11,26 +11,28 @@
 
 # misconfig
 
-misconfig checks the settings that control Claude Code, Codex and other coding agents. It shows which file sets a permission, starts an MCP server or runs a hook, explains the risk, and gives you a fix. Version 1.5 adds JSON Lines and SARIF output and a GitHub Action, so findings can go to scripts, log collectors and GitHub code scanning.
+misconfig checks the settings that control Claude Code, Codex and other coding agents. It shows which file sets a permission, starts an MCP server or runs a hook, explains the risk, and gives you a fix. Version 1.6 adds `--fix`, which makes the fixes that can be made for you after showing each one, and `--undo`, which puts them back.
 
 To hear when a release ships, choose **Watch → Custom → Releases** on the [GitHub repository](https://github.com/gkdataio/misconfig), or subscribe to the [release feed](https://github.com/gkdataio/misconfig/releases.atom). These channels also work for people who keep using 1.3.2.
 
-## New in 1.5
+## New in 1.6
 
-Findings can now go to other programs. The report you read is the same.
+Some findings can now be fixed for you.
 
 ```sh
-npx @misconfig/cli@1.5.0 --jsonl
-npx @misconfig/cli@1.5.0 --sarif misconfig.sarif
+npx @misconfig/cli@1.6.0 --fix
+npx @misconfig/cli@1.6.0 --undo
 ```
 
-`--jsonl` prints the findings as JSON Lines: one finding on each line, worst first, for `jq`, `grep` and log collectors. [Findings as JSON Lines](https://github.com/gkdataio/misconfig#findings-as-json-lines) lists what each line holds.
+`--fix` makes the changes that have one right answer. It turns off Claude Code's bypass mode, takes out an allow rule that lets it run any command, sets Codex's `approval_policy` to `"on-request"`, turns off VS Code's tool auto-approval, and pins an MCP server's package to the version `npx` last installed on this computer. It shows each change with the lines it touches and asks first. [Fix what can be fixed](https://github.com/gkdataio/misconfig#fix-what-can-be-fixed) says what it will and won't touch.
 
-`--sarif FILE` also saves the findings as SARIF 2.1.0, the format GitHub code scanning and other viewers read. The report still prints.
+`--undo` puts back what the last `--fix` changed. Each run goes back one more.
 
-On GitHub, the new action runs the check from this repository at the commit or tag your workflow names, without fetching anything from npm, and saves the SARIF file for code scanning. [In CI](https://github.com/gkdataio/misconfig#in-ci) has the workflow.
+On a computer with a [history](https://github.com/gkdataio/misconfig#review-your-computer), `--fix` leaves a risk you've accepted as it is, and its changes to the computer's settings go in the history as its own edits, approved by you. The next check doesn't ask who made them.
 
-`--rules FILE` adds rules of your own to the check, for what your team's policy says about agent settings. [Your own rules](https://github.com/gkdataio/misconfig#your-own-rules) shows one.
+Two checks are new. One reports an attack path: an agent that takes in content someone else wrote, such as GitHub issues or web pages, can read private data and can send data out, all without asking you. Each is ordinary on its own. Together, one prompt injection can leak the data. The other reports an instruction file that asks the agent to put data in an image's address, which sends the data as soon as the reply is shown.
+
+A download piped into a shell is caught in the forms installers use, such as `curl … | INSTALL_DIR=/opt sh` and `curl … | tee install.log | bash`, which 1.5 missed. A download that's only read, as in `curl … | python3 -m json.tool`, is no longer reported as code that runs. Two ways a project's files could keep a risky setting out of the check are closed. The [changelog](https://github.com/gkdataio/misconfig/blob/main/CHANGELOG.md) lists every change.
 
 ## Computer review
 
@@ -45,9 +47,9 @@ The demo changes a sample calendar server from 1.2.3 to 1.2.4. A sample Codex re
 ### Review your computer
 
 ```sh
-npx @misconfig/cli@1.5.0
-npx @misconfig/cli@1.5.0 --review
-npx @misconfig/cli@1.5.0 --history
+npx @misconfig/cli@1.6.0
+npx @misconfig/cli@1.6.0 --review
+npx @misconfig/cli@1.6.0 --history
 ```
 
 Your first scan lists the settings available for review. **Since your last scan** shows later additions, edits and removals. **Awaiting your approval** also includes changes you skipped. The same local history follows you across project folders.
@@ -62,11 +64,11 @@ misconfig compares the computer and administrator settings it discovers, includi
 
 ### Who changed a setting?
 
-Run `npx @misconfig/cli@1.5.0 --offline --attribute` to match observed edits against local Claude Code or Codex records. This works after approval, too. To read particular sessions, pass `--session "path/to/session.jsonl"` for each one.
+Edits that `--fix` and `--undo` make are recorded as theirs when they're made. Run `npx @misconfig/cli@1.6.0 --offline --attribute` to match other observed edits against local Claude Code or Codex records. This works after approval, too. To read particular sessions, pass `--session "path/to/session.jsonl"` for each one.
 
 An agent attribution requires a completed file tool, the same file, the exact change to the setting, and a tool timestamp between the two scans. Supported records include Claude Code’s Edit and Write results and Codex’s completed file changes with numbered diffs. Reconstructed patches must also match the saved file fingerprints. A shell command, file owner, or nearby agent session alone leaves the author unknown. A matching record identifies a recorded edit. Other unlogged writes can produce the same setting, and local records are editable.
 
-If you made an edit yourself, use its `e-` ID from `--history`. For example, `npx @misconfig/cli@1.5.0 --i-edited e-4` records your OS account as **self-reported**. Conflicting sources appear as uncertain. An edit with no matching evidence stays **Edit author unknown**.
+If you made an edit yourself, use its `e-` ID from `--history`. For example, `npx @misconfig/cli@1.6.0 --i-edited e-4` records your OS account as **self-reported**. Conflicting sources appear as uncertain. An edit with no matching evidence stays **Edit author unknown**.
 
 Session records can contain private conversations and tool inputs. Only `--attribute` or `--session` reads them on your computer. Automatic discovery searches the last seven days in Claude’s projects and Codex’s sessions and archived sessions, honoring their config directory overrides. The search reads up to 48 local files, 4 MiB from the end of each, up to 32 MiB total. It reports partial coverage when a limit or read error is encountered. Only matching source labels and timestamps enter the history.
 
@@ -84,9 +86,9 @@ Starting in 1.4, interactive computer scans check the public npm `latest` tag. A
 
 | Area | What it looks for |
 | --- | --- |
-| Permissions | Bypass and YOLO modes, allow-everything rules, auto-approve settings, shell aliases that start agents with approvals off, settings that send an agent's requests to another address |
+| Permissions | Bypass and YOLO modes, allow-everything rules, auto-approve settings, shell aliases that start agents with approvals off, settings that send an agent's requests to another address, and agents that take in others' content, read private data and can send data out, all without asking |
 | MCP servers | Tokens pasted into config, unpinned packages, plain-HTTP remotes, servers that run code from the project, servers that can run shell commands or read your whole disk |
-| Instructions and skills | Invisible Unicode, orders hidden in HTML comments, download-and-run commands, links to data-collection endpoints |
+| Instructions and skills | Invisible Unicode, orders hidden in HTML comments, download-and-run commands, links to data-collection endpoints, images whose address carries data out |
 | Hooks | Hooks and editor tasks that run on their own, download and run code, send data over the network, or run commands that can't be undone |
 | Where agents run | Agents started in Downloads or your home folder, folders an agent trusts that it shouldn't, secret files git doesn't ignore |
 | Installed code | MCP packages, editor extensions and skills that are known malware or copy an official name, agent versions missing security fixes, files that attacks leave behind |
@@ -104,6 +106,7 @@ npx @misconfig/cli              # this project and the agent settings on this co
 npx @misconfig/cli --explain    # everything each file tells your agents
 npx @misconfig/cli --open       # the full report as a page on your computer
 npx @misconfig/cli --lookup     # also ask OSV.dev about what's installed
+npx @misconfig/cli --fix        # make the fixes that can be made for you
 ```
 
 | Option | What it does |
@@ -119,6 +122,8 @@ npx @misconfig/cli --lookup     # also ask OSV.dev about what's installed
 | `--explain` | Shows everything each file sets: permission modes, allowed and blocked actions, MCP servers and what they run, hooks, trusted folders, hidden text, and the agents and extensions installed |
 | `--open` | Saves the full report as one page in your temp folder and opens it in your browser. The page has no scripts and loads nothing from the internet |
 | `--lookup` | Also looks up the MCP packages, extensions and agent versions it found on [OSV.dev](https://osv.dev). It lists the names and versions it would send and asks first |
+| `--fix` | Makes the fixes that can be made for you, such as turning off bypass mode or pinning an MCP package. It shows each change and asks first, and backs every file up to `~/.misconfig/backups` |
+| `--undo` | Puts back the files the last `--fix` changed, if they're still what it wrote |
 | `--offline` | Use bundled malware data and skip the npm version check. An explicit `--lookup` still asks to contact OSV.dev. Same as `MISCONFIG_OFFLINE=1` |
 | `--project-only` | Skips the agent settings on this computer |
 | `--fail-on <level>` | Exits with code 1 if it finds anything at that level or worse: `critical`, `high`, `medium` or `low` |
@@ -126,8 +131,39 @@ npx @misconfig/cli --lookup     # also ask OSV.dev about what's installed
 | `--jsonl` | Prints the findings as JSON Lines, one finding on each line |
 | `--sarif FILE` | Also saves the findings in `FILE` as SARIF 2.1.0, for GitHub code scanning and other SARIF viewers |
 | `--rules FILE` | Also checks with your own rules from `FILE`. Repeat it for more files |
-| `--yes` | Runs `--lookup` without asking, for scripts |
+| `--yes` | Runs `--lookup`, `--fix` or `--undo` without asking, for scripts |
 | `--help` / `--version` | Print the supported options or installed version |
+
+### Fix what can be fixed
+
+```sh
+npx @misconfig/cli --fix
+```
+
+`--fix` checks, then lists each change it can make with the lines it would take out and put in, and asks before it makes any. Each change is one setting in one file:
+
+| Finding | What `--fix` does |
+| --- | --- |
+| Claude Code's bypass mode is on | Sets `permissions.defaultMode` to `"default"` |
+| An allow rule lets Claude Code run any command, such as `Bash(*)` | Takes the rule out of `permissions.allow` |
+| Codex never asks before it runs a command | Sets `approval_policy` to `"on-request"` at the top of `config.toml` |
+| VS Code approves every tool call | Sets that setting to `false` |
+| An MCP server runs `npx PACKAGE` with no version | Pins the package to the version `npx` last installed on this computer |
+| An attack path that one allow rule or bypass mode opens | Takes that rule out, or turns bypass mode off |
+
+A file is changed in place, in its own format, with its comments. A change is kept only if the file then reads back as exactly that change. Every file is backed up to `~/.misconfig/backups` before any is written.
+
+`--fix` never changes a link, a read-only file, another user's file, a file outside the project and your home folder, `~/.claude.json`, a plugin's files, or a project's files in a template, example or test folder. It makes no network request and doesn't run in CI. A finding it can't fix stays in the report with what to change by hand.
+
+`--undo` puts back the files the last `--fix` changed, and each run goes back one more. A file is put back only if it's still exactly what `--fix` wrote, so an edit you made since is never lost.
+
+Once this computer has a [history](https://github.com/gkdataio/misconfig#review-your-computer), `--fix` keeps it:
+
+- A risk you've accepted is a setting you chose to keep, so `--fix` leaves it as it is. To keep one setting out of `--fix`, accept its risk first with `--approve ID`.
+- What `--fix` changes in the computer's settings is recorded as an edit by `misconfig --fix`, approved by you, because you saw each change before you said yes.
+- What `--undo` puts back is recorded as an edit by `misconfig --undo` and waits for your approval, because `--undo` shows the files and not each setting.
+
+`--no-history` leaves the history alone, and the next check lists the changes like any others.
 
 ### Findings as JSON Lines
 
@@ -187,7 +223,7 @@ A rule can only add a finding. It can't run anything, read a file misconfig does
 After checkout, run a project-only scan before installing the project's dependencies. Pin the CLI version in your workflow. This mode checks repository findings and skips personal approvals and history.
 
 ```sh
-npx --yes @misconfig/cli@1.5.0 --project-only --fail-on high
+npx --yes @misconfig/cli@1.6.0 --project-only --fail-on high
 ```
 
 On GitHub, copy the [example workflow](https://github.com/gkdataio/misconfig/blob/main/examples/github-actions/misconfig.yml) into `.github/workflows/misconfig.yml`. It checks out the repository, sets up Node.js and runs the CLI as a shell step. The `--yes` before the package name lets npx fetch the pinned CLI.
@@ -195,7 +231,7 @@ On GitHub, copy the [example workflow](https://github.com/gkdataio/misconfig/blo
 To see the findings in the repository's Security tab and on pull requests, use the action with code scanning. Copy the [code scanning workflow](https://github.com/gkdataio/misconfig/blob/main/examples/github-actions/code-scanning.yml) instead:
 
 ```yaml
-- uses: gkdataio/misconfig@v1.5.0
+- uses: gkdataio/misconfig@v1.6.0
   id: misconfig
   with:
     fail-on: high
@@ -227,6 +263,7 @@ A name in a checked file can't give the CI system a command through the log. Whe
 - `--lookup` sends package names and versions to OSV.dev after the prompt, or with the CLI's `--yes`. The `npx` launcher may contact npm to fetch the CLI before its own offline mode starts. An installed copy or the extracted demo works without that download.
 - `--jsonl` and `--sarif` upload nothing. Both hold what the report shows for each finding: the file, the finding's own words and, in JSON Lines, the masked line it points at. SARIF names a file in your home folder from `HOME`, not by its full path. Read either before you share it.
 - `--rules` reads your rules on this computer. Nothing in them is sent anywhere, and neither is what they find.
+- `--fix` and `--undo` send nothing. `--fix` keeps a copy of each file it changes in `~/.misconfig/backups`, as the file was, with any secrets in it. Delete the folder when you no longer need the copies.
 - Credential files such as `.env` and `id_rsa`, and programs inside skills, are listed by name only and never opened. Secrets inside agent files are masked as they're read.
 
 The [privacy policy](https://misconfig.ai/privacy) lists everything misconfig.ai receives and how long it's kept.
@@ -251,6 +288,7 @@ misconfig is plain JavaScript with no dependencies, so what you install is what'
 | [`lib/discover.js`](https://github.com/gkdataio/misconfig/blob/main/lib/discover.js) | Which files the command reads, and the limits on what it reads |
 | [`lib/html.js`](https://github.com/gkdataio/misconfig/blob/main/lib/html.js) | The page `--open` saves |
 | [`lib/formats.js`](https://github.com/gkdataio/misconfig/blob/main/lib/formats.js) | Findings as JSON Lines and as SARIF |
+| [`lib/fix.js`](https://github.com/gkdataio/misconfig/blob/main/lib/fix.js) | What `--fix` changes, and how `--undo` puts it back |
 | [`lib/rule-files.js`](https://github.com/gkdataio/misconfig/blob/main/lib/rule-files.js) | How `--rules` reads your rules |
 | [`lib/computer-review.js`](https://github.com/gkdataio/misconfig/blob/main/lib/computer-review.js) | Changes, approvals and accepted risks |
 | [`lib/edit-attribution.js`](https://github.com/gkdataio/misconfig/blob/main/lib/edit-attribution.js) | How optional local edit records are matched |

@@ -28,7 +28,7 @@ jobs:
       # commit it points to.
       - name: Check the checked-out repository
         id: misconfig
-        uses: gkdataio/misconfig@v1.5.0
+        uses: gkdataio/misconfig@v1.6.0
         with:
           fail-on: high
       # Runs when the check fails on a finding too. The output is empty when

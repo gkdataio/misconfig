@@ -133,4 +133,20 @@ assert.ok(demo.stdout.includes(`misconfig ${VERSION}`), demo.stdout);
 // None of that left anything in the home folder.
 assert.deepEqual(readdirSync(home), []);
 
+// --fix makes its change in place, and --undo puts the file back as it was.
+// Neither runs in CI, so they're tried the way they'd run on someone's own
+// computer. The only thing they leave in the home folder is the backups.
+const fixes = project("fixes", { ".claude/settings.json": '{\n  // Team settings.\n  "permissions": { "allow": ["Bash(*)", "Read"] }\n}\n' });
+const settings = path.join(fixes, ".claude", "settings.json");
+const local = { ...env };
+for (const key of ["CI", "GITHUB_ACTIONS"]) delete local[key];
+const change = (...args) => spawnSync(process.execPath, [cli, ...args], { cwd: fixes, env: local, encoding: "utf8" });
+const fixed = change("--fix", "--yes", "--project-only");
+assert.equal(fixed.status, 0, fixed.stderr || fixed.stdout);
+assert.equal(readFileSync(settings, "utf8"), '{\n  // Team settings.\n  "permissions": { "allow": ["Read"] }\n}\n');
+const undone = change("--undo", "--yes");
+assert.equal(undone.status, 0, undone.stderr || undone.stdout);
+assert.equal(readFileSync(settings, "utf8"), '{\n  // Team settings.\n  "permissions": { "allow": ["Bash(*)", "Read"] }\n}\n');
+assert.deepEqual(readdirSync(home), [".misconfig"]);
+
 console.log(`misconfig ${VERSION} installs from its archive and runs on ${process.platform} with Node.js ${process.versions.node}.`);
