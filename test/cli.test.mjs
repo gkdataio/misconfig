@@ -216,7 +216,9 @@ test("--help lists only the options there are, and what each one sends", async (
 	for (const gone of ["--share", "--contribute", "encrypt", "private"]) assert.ok(!stdout.includes(gone), gone);
 	assert.match(stdout, /Nothing else is sent\s+unless you use --lookup\./);
 	assert.match(stdout, /--open\s+Save the full report as a page on this computer and\s+open it in your browser\. Nothing is uploaded\./);
-	assert.match(stdout, /--yes\s+Look up without asking/);
+	assert.match(stdout, /--yes\s+Look up, fix or undo without asking/);
+	assert.match(stdout, /--fix\s+Make the fixes that can be made for you/);
+	assert.match(stdout, /--undo\s+Put back the files the last --fix changed/);
 });
 
 test("--explain shows everything each file says", async () => {

@@ -1354,6 +1354,11 @@ p {
 .rule {
 	overflow-wrap: break-word;
 }
+/* A line about the finding itself: that --fix can make its change. */
+.f-note {
+	color: var(--text-2);
+	font-size: 14px;
+}
 .f-meta {
 	display: flex;
 	flex-wrap: wrap;
